@@ -1,0 +1,248 @@
+syntax = "proto2";
+
+message NavMonMessage {
+  enum Type {
+    ReceptionDataType = 1;
+    ObserverPositionType = 2;
+    GalileoInavType = 3;
+    RFDataType = 4;
+    GPSInavType = 5;
+    BeidouInavTypeD1 = 6;
+    GlonassInavType = 7;
+    BeidouInavTypeD2 = 8;
+    SARResponseType = 9;
+    DebuggingType = 10;
+    ObserverDetailsType = 11;
+    UbloxJammingStatsType = 12;
+    SBASMessageType = 13;
+    GPSCnavType = 14;
+    RTCMMessageType = 15;
+    TimeOffsetType = 16;
+    GalileoFnavType = 17;
+    GalileoCnavType = 18;
+  }
+
+  required uint64 sourceID = 1;
+
+  required Type type = 2;
+  required uint64 localUtcSeconds = 3;
+  required uint64 localUtcNanoseconds = 4;
+
+  message GalileoInav {
+	required uint32 gnssWN =1;
+  	required uint32 gnssTOW =2; // INTEGERS!
+
+	required uint32 gnssID =3;
+	required uint32 gnssSV =4;
+	required bytes contents =5;
+        optional uint32 sigid = 6;
+        optional bytes reserved1 = 7;
+        optional bytes reserved2 = 8;
+        optional bytes sar = 9;
+        optional bytes spare = 10;
+        optional bytes crc = 11;      
+  }
+
+message GalileoFnav {
+	required uint32 gnssWN =1;
+  	required uint32 gnssTOW =2; // INTEGERS!
+
+	required uint32 gnssID =3;
+	required uint32 gnssSV =4;
+	required bytes contents =5;
+        required uint32 sigid = 6;        
+  }
+  message GalileoCnav {
+	required uint32 gnssWN =1;
+  	required uint32 gnssTOW =2; // INTEGERS!
+
+	required uint32 gnssID =3;
+	required uint32 gnssSV =4;
+	required bytes contents =5;
+        required uint32 sigid = 6;        
+  }
+
+  message GPSInav {
+	required uint32 gnssWN =1;
+  	required uint32 gnssTOW =2; // INTEGERS!
+
+	required uint32 gnssID =3;
+	required uint32 gnssSV =4;
+	required bytes contents =5;
+        optional uint32 sigid = 6;
+  }
+
+  message BeidouInavD1 {
+	required uint32 gnssWN =1;
+  	required uint32 gnssTOW =2; // INTEGERS!
+
+	required uint32 gnssID =3;
+	required uint32 gnssSV =4;
+	required bytes contents =5;
+                optional uint32 sigid = 6;      
+  }
+  message BeidouInavD2 {
+	required uint32 gnssWN =1;
+  	required uint32 gnssTOW =2; // INTEGERS!
+
+	required uint32 gnssID =3;
+	required uint32 gnssSV =4;
+	required bytes contents =5;
+        optional uint32 sigid = 6;        
+  }
+
+  message GlonassInav {
+        required uint32 gnssID  = 1;
+	required uint32 gnssSV  = 2;
+        required uint32 freq    = 3;
+	required bytes contents = 4;
+        optional uint32 sigid = 5;
+  }
+
+
+  message ReceptionData {
+        required uint32 gnssID =1;
+	required uint32 gnssSV =2;
+        optional uint32 sigid = 7;
+  	required uint32 db     =3;
+        required uint32 el     =4;
+        required uint32 azi    =5;
+        required double prRes  =6;
+        optional uint32 qi = 8;
+        optional bool used = 9;
+        
+  }
+
+  message RFData {
+        required double rcvTow = 1;
+        required uint32 rcvWn = 2;     
+	required uint32 gnssID =3;
+	required uint32 gnssSV =4;
+	required double doppler =5;
+	required double carrierphase = 6;
+        required double pseudorange = 7;
+        required double locktimeMS = 8;
+        required double doStd = 9;
+        required double cpStd = 10;
+        required double prStd = 11;
+        optional uint32 sigid = 12;
+        optional uint32 cno = 13;
+        optional bool prvalid = 14;
+        optional bool cpvalid = 15;
+        optional bool halfcycvalid =16;
+        optional bool subhalfcyc = 17;
+        optional bool clkReset = 18;
+        
+  }
+
+  message ObserverPosition {
+          required double x = 1;
+          required double y = 2;
+          required double z = 3;
+          required double acc = 4;
+          optional double groundSpeed = 5;
+  }
+
+  message SARResponse {
+  	required uint32 gnssID =1;
+	required uint32 gnssSV =2;
+        required uint32 sigid =3;
+        required uint32 type =4;
+        required bytes identifier = 5;
+        required uint32 code= 6;
+        required bytes params =7;
+  }
+
+  message DebuggingMessage {
+          required uint32 type = 1;
+          required bytes payload = 2;
+  }
+
+  message ObserverDetails {
+          required string vendor = 1;
+          required string hwversion = 2;
+          required string modules = 3;
+          required string swversion = 4;
+          required string serialno = 5;
+          optional double clockOffsetNS = 6;
+          optional double clockOffsetDriftNS = 7;
+          optional double clockAccuracyNS = 8;
+          optional double freqAccuracyPS = 9;
+          optional string owner = 10;
+          optional string remark = 11;
+          optional string recvgithash = 12;
+          optional uint32 uptime = 13;
+  }
+
+  message UbloxJammingStats
+  {
+        required uint32 noisePerMS = 1;
+        required uint32 agcCnt = 2;
+        required uint32 flags = 3;
+        required uint32 jamInd = 4;
+  }
+
+  message SBASMessage {
+	required uint32 gnssID = 1;
+	required uint32 gnssSV = 2;
+	required bytes contents = 3;
+  }
+
+
+  message GPSCnav {
+	required uint32 gnssWN =1;
+  	required uint32 gnssTOW =2; // INTEGERS!
+
+	required uint32 gnssID =3;
+	required uint32 gnssSV =4;
+	required bytes contents =5;
+        required uint32 sigid = 6;
+  }
+
+
+  message RTCMMessage {
+	required bytes contents =5;
+  }
+
+  message GNSSOffset
+  {
+        required uint32 gnssid = 1;
+
+        required int32 offsetNS = 2;
+        required uint32 tAcc = 3;
+        required bool valid = 4;
+        optional int32 leapS = 5;
+        required uint32 tow = 6;
+        optional uint32 wn = 7;
+        optional uint32 nT = 8;
+        optional uint32 n4 = 9;
+
+  }
+  
+
+  message TimeOffsetMessage
+  {
+       required uint32 itow = 1;
+       repeated GNSSOffset offsets = 2;
+  }
+
+
+  optional GalileoInav gi=5;
+  optional ReceptionData rd=6;  
+  optional RFData rfd=7;
+  optional ObserverPosition op=8;
+  optional GPSInav gpsi=9;
+  optional BeidouInavD1 bid1=10;
+  optional BeidouInavD2 bid2=11;
+  optional GlonassInav  gloi=12;
+  optional SARResponse sr=13;
+  optional DebuggingMessage dm = 14;
+  optional ObserverDetails od = 15;
+  optional UbloxJammingStats ujs = 16;
+  optional SBASMessage sbm = 17;
+  optional GPSCnav gpsc = 18;
+  optional RTCMMessage rm = 19;
+  optional TimeOffsetMessage to = 20;
+  optional GalileoFnav gf=21;
+  optional GalileoCnav gc=22;
+}
