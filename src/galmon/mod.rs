@@ -8,6 +8,7 @@ pub mod transport {
     use prost::Message;
     use std::io::Read;
 
+    #[derive(Debug, Clone)]
     pub struct ReadTransport<R> {
         read: R,
         buffer: BytesMut,
