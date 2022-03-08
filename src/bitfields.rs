@@ -37,7 +37,7 @@ impl<'a> NmaHeader<'a> {
     }
 
     pub fn chain_and_pubkey_status(&self) -> ChainAndPubkeyStatus {
-        match (self.value() >> 2) & 0x7 {
+        match (self.value() >> 1) & 0x7 {
             0 | 6 | 7 => ChainAndPubkeyStatus::Reserved,
             1 => ChainAndPubkeyStatus::Nominal,
             2 => ChainAndPubkeyStatus::EndOfChain,
@@ -60,5 +60,22 @@ impl fmt::Debug for NmaHeader<'_> {
             .field("chain_id", &self.chain_id())
             .field("chain_and_pubkey_status", &self.chain_and_pubkey_status())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn nma_header() {
+        let header = [0x52]; // NMA header broadcast on 2022-03-07
+        let nma_header = NmaHeader(&header);
+        assert_eq!(nma_header.nma_status(), NmaStatus::Test);
+        assert_eq!(nma_header.chain_id(), 1);
+        assert_eq!(
+            nma_header.chain_and_pubkey_status(),
+            ChainAndPubkeyStatus::Nominal
+        );
     }
 }
