@@ -10,7 +10,8 @@ publish = false
 
 [features]
 # Galmon protobuf transport format support
-galmon = ["bytes", "prost", "prost-build"]
+galmon = ["bytes", "prost", "prost-build", "std"]
+std = []
 
 [dependencies]
 bytes = { version = "1.1", optional = true }
@@ -20,4 +21,3 @@ prost = { version = "0.9", optional = true }
 
 [build-dependencies]
 prost-build = { version = "0.9", optional = true }
-
