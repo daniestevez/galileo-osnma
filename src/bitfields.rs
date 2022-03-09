@@ -332,6 +332,7 @@ impl fmt::Debug for DsmKroot<'_> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use hex_literal::hex;
 
     #[test]
     fn nma_header() {
@@ -352,5 +353,50 @@ mod test {
         assert_eq!(dsm_header.dsm_id(), 1);
         assert_eq!(dsm_header.dsm_block_id(), 7);
         assert_eq!(dsm_header.dsm_type(), DsmType::Kroot);
+    }
+
+    #[test]
+    fn dsm_kroot() {
+        // DSM-KROOT broadcast on 2022-03-07 9:00 UTC
+        let dsm = hex!(
+            "
+            22 50 49 21 04 98 21 25 d3 96 4d a3 a2 84 1e 1d
+            e4 d4 58 c0 e9 84 24 76 e0 04 66 6c f3 79 58 de
+            28 51 97 a2 63 53 f1 a4 c6 6d 7e 3d 29 18 53 ba
+            5a 13 c9 c3 48 4a 26 77 70 11 2a 13 38 3e a5 2d
+            3a 01 9d 5b 6e 1d d1 87 b9 45 3c df 06 ca 7f 34
+            ea 14 97 52 5a af 18 f1 f9 f1 fc cb 12 29 89 77
+            35 c0 21 b0 41 73 93 b5"
+        );
+        let dsm = DsmKroot(&dsm);
+        assert_eq!(dsm.number_of_blocks(), Some(8));
+        assert_eq!(dsm.public_key_id(), 2);
+        assert_eq!(dsm.kroot_chain_id(), 1);
+        assert_eq!(dsm.hash_function(), HashFunction::Sha256);
+        assert_eq!(dsm.mac_function(), MacFunction::HmacSha256);
+        assert_eq!(dsm.key_size(), Some(128));
+        assert_eq!(dsm.tag_size(), Some(40));
+        assert_eq!(dsm.mac_lookup_table(), 0x21);
+        assert_eq!(dsm.kroot_wn(), 0x498);
+        assert_eq!(dsm.kroot_towh(), 0x21);
+        assert_eq!(dsm.alpha(), 0x25d3964da3a2);
+        assert_eq!(
+            dsm.kroot(),
+            hex!("84 1e 1d e4 d4 58 c0 e9 84 24 76 e0 04 66 6c f3")
+        );
+        assert_eq!(dsm.ecdsa_function(), EcdsaFunction::P256Sha256);
+        assert_eq!(
+            dsm.digital_signature(),
+            hex!(
+                "79 58 de 28 51 97 a2 63 53 f1 a4 c6 6d 7e 3d 29
+                 18 53 ba 5a 13 c9 c3 48 4a 26 77 70 11 2a 13 38
+                 3e a5 2d 3a 01 9d 5b 6e 1d d1 87 b9 45 3c df 06
+                 ca 7f 34 ea 14 97 52 5a af 18 f1 f9 f1 fc cb 12"
+            )
+        );
+        assert_eq!(dsm.padding(), hex!("29 89 77 35 c0 21 b0 41 73 93 b5"));
+        let nma_header = [0x52];
+        let nma_header = NmaHeader(&nma_header);
+        assert!(dsm.check_padding(nma_header));
     }
 }
