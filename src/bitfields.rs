@@ -1,5 +1,9 @@
 use crate::types::{Towh, Wn};
 use core::fmt;
+use p256::ecdsa::{
+    signature::{Signature as SignatureTrait, Verifier},
+    Signature, VerifyingKey,
+};
 use sha2::{Digest, Sha256};
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
@@ -292,6 +296,15 @@ impl<'a> DsmKroot<'a> {
         let padding = self.padding();
         let truncated = &hash[..padding.len()];
         truncated == padding
+    }
+
+    // By now we only support P256
+    pub fn check_signature(&self, nma_header: NmaHeader, pubkey: &VerifyingKey) -> bool {
+        let (message, size) = self.signature_message(nma_header);
+        let message = &message[..size];
+        let signature = Signature::from_bytes(self.digital_signature())
+            .expect("error serializing ECDSA signature");
+        pubkey.verify(message, &signature).is_ok()
     }
 }
 

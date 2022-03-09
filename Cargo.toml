@@ -12,13 +12,17 @@ publish = false
 # Galmon protobuf transport format support
 galmon = ["bytes", "prost", "prost-build", "std"]
 std = []
+pem = ["ecdsa/pkcs8", "spki"]
 
 [dependencies]
 bytes = { version = "1.1", optional = true }
+ecdsa = "0.13"
 env_logger = { version = "0.9", optional = true }
 log = "0.4"
+p256 = { version = "0.10", features = ["ecdsa"] }
 prost = { version = "0.9", optional = true }
 sha2 = "0.10"
+spki = { version = "0.5", optional = true, features = ["pem"] }
 
 [build-dependencies]
 prost-build = { version = "0.9", optional = true }
