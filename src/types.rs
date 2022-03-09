@@ -13,3 +13,6 @@ pub const HKROOT_MESSAGE_BYTES: usize = HKROOT_SECTION_BYTES * WORDS_PER_SUBFRAM
 pub const MACK_MESSAGE_BYTES: usize = MACK_SECTION_BYTES * WORDS_PER_SUBFRAME;
 pub type HkrootMessage = [u8; HKROOT_MESSAGE_BYTES];
 pub type MackMessage = [u8; MACK_MESSAGE_BYTES];
+
+pub const DSM_BLOCK_BYTES: usize = 13;
+pub type DsmBlock = [u8; DSM_BLOCK_BYTES];
