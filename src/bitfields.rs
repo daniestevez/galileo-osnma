@@ -63,6 +63,46 @@ impl fmt::Debug for NmaHeader<'_> {
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+pub struct DsmHeader<'a>(pub &'a [u8; 1]);
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum DsmType {
+    Kroot,
+    Pkr,
+}
+
+impl<'a> DsmHeader<'a> {
+    pub fn dsm_id(&self) -> u8 {
+        self.value() >> 4
+    }
+
+    pub fn dsm_block_id(&self) -> u8 {
+        self.value() & 0xf
+    }
+
+    pub fn dsm_type(&self) -> DsmType {
+        if self.dsm_id() >= 12 {
+            DsmType::Pkr
+        } else {
+            DsmType::Kroot
+        }
+    }
+
+    fn value(&self) -> u8 {
+        self.0[0]
+    }
+}
+
+impl fmt::Debug for DsmHeader<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DsmHeader")
+            .field("dsm_id", &self.dsm_id())
+            .field("dsm_block_id", &self.dsm_block_id())
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -77,5 +117,14 @@ mod test {
             nma_header.chain_and_pubkey_status(),
             ChainAndPubkeyStatus::Nominal
         );
+    }
+
+    #[test]
+    fn dsm_header() {
+        let header = [0x17];
+        let dsm_header = DsmHeader(&header);
+        assert_eq!(dsm_header.dsm_id(), 1);
+        assert_eq!(dsm_header.dsm_block_id(), 7);
+        assert_eq!(dsm_header.dsm_type(), DsmType::Kroot);
     }
 }

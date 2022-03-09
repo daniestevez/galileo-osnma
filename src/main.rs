@@ -1,5 +1,5 @@
 #[cfg(feature = "galmon")]
-use galileo_osnma::bitfields::NmaHeader;
+use galileo_osnma::bitfields::{DsmHeader, NmaHeader};
 #[cfg(feature = "galmon")]
 use galileo_osnma::galmon::navmon::nav_mon_message::GalileoInav;
 #[cfg(feature = "galmon")]
@@ -30,7 +30,9 @@ fn main() -> std::io::Result<()> {
             ) {
                 let nma_header = &hkroot[..1].try_into().unwrap();
                 let nma_header = NmaHeader(nma_header);
-                dbg!(nma_header);
+                let dsm_header = &hkroot[1..2].try_into().unwrap();
+                let dsm_header = DsmHeader(dsm_header);
+                dbg!(nma_header, dsm_header);
             }
         }
     }
