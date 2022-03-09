@@ -1,5 +1,6 @@
 use crate::types::{Towh, Wn};
 use core::fmt;
+use sha2::{Digest, Sha256};
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct NmaHeader<'a>(pub &'a [u8; 1]);
@@ -262,6 +263,35 @@ impl<'a> DsmKroot<'a> {
     pub fn padding(&self) -> &[u8] {
         let start = 13 + self.kroot().len() + self.digital_signature().len();
         &self.0[start..]
+    }
+
+    // message for digital signature verification
+    fn signature_message(&self, nma_header: NmaHeader) -> ([u8; 209], usize) {
+        let mut m = [0; 209];
+        m[0] = nma_header.0[0];
+        let end = 13 + self.kroot().len();
+        // we skip the NB_DK and PKID fields in self.0
+        m[1..end].copy_from_slice(&self.0[1..end]);
+        (m, end)
+    }
+
+    pub fn check_padding(&self, nma_header: NmaHeader) -> bool {
+        // maximum size is 209 bytes for the message and 132 bytes for
+        // the P521Sha512 signature
+        let mut buff = [0_u8; 209 + 132];
+        let (message, size) = self.signature_message(nma_header);
+        let message = &message[..size];
+        let a = message.len();
+        buff[..a].copy_from_slice(message);
+        let signature = self.digital_signature();
+        let b = a + signature.len();
+        buff[a..b].copy_from_slice(signature);
+        let mut hash = Sha256::new();
+        hash.update(&buff[..b]);
+        let hash = hash.finalize();
+        let padding = self.padding();
+        let truncated = &hash[..padding.len()];
+        truncated == padding
     }
 }
 

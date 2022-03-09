@@ -36,13 +36,18 @@ fn main() -> std::io::Result<()> {
                 inav.gnss_sv.try_into().unwrap(),
             ) {
                 let nma_header = &hkroot[..1].try_into().unwrap();
-                let _nma_header = NmaHeader(nma_header);
+                let nma_header = NmaHeader(nma_header);
                 let dsm_header = &hkroot[1..2].try_into().unwrap();
                 let dsm_header = DsmHeader(dsm_header);
                 let dsm_block = &hkroot[2..].try_into().unwrap();
                 if let Some(dsm) = dsm.feed(dsm_header, dsm_block) {
                     let dsm_kroot = DsmKroot(dsm);
                     dbg!(dsm_kroot);
+                    if !dsm_kroot.check_padding(nma_header) {
+                        log::error!("wrong DSM-KROOT padding");
+                    } else {
+                        log::info!("correct DSM-KROOT padding");
+                    }
                 }
             }
         }
