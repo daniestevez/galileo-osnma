@@ -101,3 +101,60 @@ impl Default for CollectSubframe {
         CollectSubframe::new()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn collect() {
+        // This test starts delivering data for a CollectSubframe for a single
+        // satellite at some point already inside a subframe. Then it continues
+        // until one full subframe is delivered. The test checks the return value
+        // of CollectSubframe::feed every time it is called.
+        //
+        // The data that is supplied as part of the HKROOT section and MACK
+        // section is different each time, so that we can check that the data
+        // has been assembled correctly into the HKROOT and MACK messages.
+        let svn = 1;
+        let wn = 1234;
+        let mut collector = CollectSubframe::new();
+
+        // Start delivering data 5 seconds into the subframe
+        let delta = 5;
+        let tow0 = 123 * SECONDS_PER_SUBFRAME + delta;
+        let tow1 = tow0 + (SECONDS_PER_SUBFRAME) - delta;
+        let mut counter = 0;
+        const N: usize = HKROOT_SECTION_BYTES + MACK_SECTION_BYTES;
+        for tow in (tow0..tow1).step_by(2) {
+            let mut data = [counter; N];
+            data[0] ^= 0xff;
+            assert!(collector.feed(&data, wn, tow, svn).is_none());
+            counter += 1;
+        }
+        let counter0 = counter;
+        // Now we start a new subframe
+        let tow2 = tow1 + SECONDS_PER_SUBFRAME;
+        for tow in (tow1..tow2).step_by(2) {
+            let mut data = [counter; N];
+            data[0] ^= 0xff;
+            let ret = collector.feed(&data, wn, tow, svn);
+            counter += 1;
+            if tow != tow2 - 2 {
+                assert!(ret.is_none())
+            } else {
+                let mut expected_hkroot = Vec::new();
+                let mut expected_mack = Vec::new();
+                for j in 0..WORDS_PER_SUBFRAME {
+                    let a = counter0 + j;
+                    expected_hkroot.extend_from_slice(&[a ^ 0xff; HKROOT_SECTION_BYTES]);
+                    expected_mack.extend_from_slice(&[a; MACK_SECTION_BYTES]);
+                }
+                let expected_hkroot: HkrootMessage = expected_hkroot[..].try_into().unwrap();
+                let expected_mack: MackMessage = expected_mack[..].try_into().unwrap();
+                let expected = Some((&expected_hkroot, &expected_mack));
+                assert_eq!(ret, expected);
+            }
+        }
+    }
+}
