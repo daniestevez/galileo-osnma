@@ -1,3 +1,4 @@
+use crate::types::{Towh, Wn};
 use core::fmt;
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
@@ -99,6 +100,188 @@ impl fmt::Debug for DsmHeader<'_> {
         f.debug_struct("DsmHeader")
             .field("dsm_id", &self.dsm_id())
             .field("dsm_block_id", &self.dsm_block_id())
+            .finish()
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+pub struct DsmKroot<'a>(pub &'a [u8]);
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum HashFunction {
+    Sha256,
+    Sha3_256,
+    Reserved,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum MacFunction {
+    HmacSha256,
+    CmacAes,
+    Reserved,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum EcdsaFunction {
+    P256Sha256,
+    P521Sha512,
+}
+
+impl<'a> DsmKroot<'a> {
+    pub fn number_of_blocks(&self) -> Option<usize> {
+        match self.0[0] >> 4 {
+            1 => Some(7),
+            2 => Some(8),
+            3 => Some(9),
+            4 => Some(10),
+            5 => Some(11),
+            6 => Some(12),
+            7 => Some(13),
+            8 => Some(14),
+            _ => None, // reserved value
+        }
+    }
+
+    pub fn public_key_id(&self) -> u8 {
+        self.0[0] & 0xf
+    }
+
+    pub fn kroot_chain_id(&self) -> u8 {
+        (self.0[1] >> 6) & 0x3
+    }
+
+    pub fn hash_function(&self) -> HashFunction {
+        match (self.0[1] >> 2) & 0x3 {
+            0 => HashFunction::Sha256,
+            2 => HashFunction::Sha3_256,
+            _ => HashFunction::Reserved,
+        }
+    }
+
+    pub fn mac_function(&self) -> MacFunction {
+        match self.0[1] & 0x3 {
+            0 => MacFunction::HmacSha256,
+            1 => MacFunction::CmacAes,
+            _ => MacFunction::Reserved,
+        }
+    }
+
+    pub fn key_size(&self) -> Option<usize> {
+        // note that all the key sizes are a multiple of 8 bits
+        let size = match self.0[2] >> 4 {
+            0 => Some(96),
+            1 => Some(104),
+            2 => Some(112),
+            3 => Some(120),
+            4 => Some(128),
+            5 => Some(160),
+            6 => Some(192),
+            7 => Some(224),
+            8 => Some(256),
+            _ => None,
+        };
+        if let Some(s) = size {
+            debug_assert!(s % 8 == 0);
+        }
+        size
+    }
+
+    pub fn tag_size(&self) -> Option<usize> {
+        match self.0[2] & 0xf {
+            5 => Some(20),
+            6 => Some(24),
+            7 => Some(28),
+            8 => Some(32),
+            9 => Some(40),
+            _ => None,
+        }
+    }
+
+    pub fn mac_lookup_table(&self) -> u8 {
+        self.0[3]
+    }
+
+    pub fn kroot_wn(&self) -> Wn {
+        (u16::from(self.0[4] & 0xf) << 8) | u16::from(self.0[5])
+    }
+
+    pub fn kroot_towh(&self) -> Towh {
+        self.0[6]
+    }
+
+    pub fn alpha(&self) -> u64 {
+        let mut value = 0_u64;
+        for j in 0..6 {
+            value |= u64::from(self.0[7 + j]) << (8 * (5 - j));
+        }
+        value
+    }
+
+    pub fn kroot(&self) -> &[u8] {
+        let size = self
+            .key_size()
+            .expect("attempted to extract kroot of DSM with reserved key size");
+        let size_bytes = size / 8;
+        &self.0[13..13 + size_bytes]
+    }
+
+    pub fn ecdsa_function(&self) -> EcdsaFunction {
+        // Although the ICD is not clear about this, we can guess the
+        // ECDSA function in use from the size of the DSM-KROOT
+        let total_len = self.0.len();
+        let fixed_len = 13;
+        let kroot_len = self.kroot().len();
+        let remaining_len = total_len - fixed_len - kroot_len;
+        let b = 13; // block size
+        let p256_bytes = 64; // 512 bits
+        let p521_bytes = 132; // 1056 bits
+        let p256_padding = (b - (kroot_len + p256_bytes) % b) % b;
+        let p521_padding = (b - (kroot_len + p521_bytes) % b) % b;
+        if remaining_len == p256_bytes + p256_padding {
+            EcdsaFunction::P256Sha256
+        } else if remaining_len == p521_bytes + p521_padding {
+            EcdsaFunction::P521Sha512
+        } else {
+            panic!(
+                "failed to guess ECDSA function with DSM-KROOT total len = {}\
+                    and kroot len = {}",
+                total_len, kroot_len
+            );
+        }
+    }
+
+    pub fn digital_signature(&self) -> &[u8] {
+        let size = match self.ecdsa_function() {
+            EcdsaFunction::P256Sha256 => 64,
+            EcdsaFunction::P521Sha512 => 132,
+        };
+        let start = 13 + self.kroot().len();
+        &self.0[start..start + size]
+    }
+
+    pub fn padding(&self) -> &[u8] {
+        let start = 13 + self.kroot().len() + self.digital_signature().len();
+        &self.0[start..]
+    }
+}
+
+impl fmt::Debug for DsmKroot<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DsmKroot")
+            .field("number_of_blocks", &self.number_of_blocks())
+            .field("public_key_id", &self.public_key_id())
+            .field("kroot_chain_id", &self.kroot_chain_id())
+            .field("hash_function", &self.hash_function())
+            .field("mac_function", &self.mac_function())
+            .field("key_size", &self.key_size())
+            .field("tag_size", &self.tag_size())
+            .field("mac_loopkup_table", &self.mac_lookup_table())
+            .field("kroot_wn", &self.kroot_wn())
+            .field("kroot_towh", &self.kroot_towh())
+            .field("alpha", &self.alpha())
+            .field("kroot", &self.kroot())
+            .field("digital_signature", &self.digital_signature())
+            .field("padding", &self.padding())
             .finish()
     }
 }

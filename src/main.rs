@@ -1,5 +1,5 @@
 #[cfg(feature = "galmon")]
-use galileo_osnma::bitfields::{DsmHeader, NmaHeader};
+use galileo_osnma::bitfields::{DsmHeader, DsmKroot, NmaHeader};
 #[cfg(feature = "galmon")]
 use galileo_osnma::dsm::CollectDsm;
 #[cfg(feature = "galmon")]
@@ -40,8 +40,9 @@ fn main() -> std::io::Result<()> {
                 let dsm_header = &hkroot[1..2].try_into().unwrap();
                 let dsm_header = DsmHeader(dsm_header);
                 let dsm_block = &hkroot[2..].try_into().unwrap();
-                if let Some(_dsm) = dsm.feed(dsm_header, dsm_block) {
-                    // do something with dsm block
+                if let Some(dsm) = dsm.feed(dsm_header, dsm_block) {
+                    let dsm_kroot = DsmKroot(dsm);
+                    dbg!(dsm_kroot);
                 }
             }
         }

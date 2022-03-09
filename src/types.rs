@@ -1,5 +1,6 @@
 pub type Wn = u16;
-pub type Tow = u32;
+pub type Tow = u32; // Time of week in seconds
+pub type Towh = u8; // Time of week in hours
 
 pub const HKROOT_SECTION_BYTES: usize = 1;
 pub const MACK_SECTION_BYTES: usize = 4;

@@ -122,6 +122,7 @@ impl CollectDsm {
                 }
             }
             DsmType::Kroot => {
+                // TODO: use DsmKroot::number_of_blocks instead of this
                 match nb {
                     1 => Some(7),
                     2 => Some(8),
