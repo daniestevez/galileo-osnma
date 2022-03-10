@@ -24,7 +24,12 @@ impl Key {
         self.gst_subframe
     }
 
+    fn check_gst(gst: Gst) {
+        assert!(gst.tow % 30 == 0);
+    }
+
     pub fn from_bitslice(slice: &BitSlice, gst: Gst) -> Key {
+        Self::check_gst(gst);
         let mut data = [0; MAX_KEY_BYTES];
         let size = slice.len();
         assert!(size % 8 == 0);
@@ -32,6 +37,18 @@ impl Key {
         Key {
             data,
             size,
+            gst_subframe: gst,
+        }
+    }
+
+    pub fn from_slice(slice: &[u8], gst: Gst) -> Key {
+        Self::check_gst(gst);
+        let mut data = [0; MAX_KEY_BYTES];
+        let size = slice.len();
+        data[..size].copy_from_slice(slice);
+        Key {
+            data,
+            size: 8 * size,
             gst_subframe: gst,
         }
     }
@@ -83,5 +100,35 @@ impl Key {
             size: self.size,
             gst_subframe: previous_subframe,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use hex_literal::hex;
+
+    #[test]
+    fn one_way_function() {
+        // Keys broadcast on 2022-03-07 ~9:00 UTC
+        let k0 = Key::from_slice(
+            &hex!("42 b4 19 da 6a da 1c 0a 3d 6f 56 a5 e5 dc 59 a7"),
+            Gst {
+                wn: 1176,
+                tow: 120930,
+            },
+        );
+        let k1 = Key::from_slice(
+            &hex!("95 42 aa d4 7a bf 39 ba fe 56 68 61 af e8 80 b2"),
+            Gst {
+                wn: 1176,
+                tow: 120960,
+            },
+        );
+        let chain = ChainParameters {
+            hash: HashFunction::Sha256,
+            alpha: 0x25d3964da3a2,
+        };
+        assert_eq!(k1.one_way_function(&chain), k0);
     }
 }
