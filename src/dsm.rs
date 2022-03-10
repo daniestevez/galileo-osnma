@@ -148,3 +148,58 @@ impl Default for CollectDsm {
         CollectDsm::new()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use hex_literal::hex;
+
+    #[test]
+    fn collect_dsm() {
+        // HKROOT messages broadcast on 2022-03-07 ~9:00 UTC
+        let hkroots = [
+            hex!("52 25 01 9d 5b 6e 1d d1 87 b9 45 3c df 06 ca"),
+            hex!("52 23 a4 c6 6d 7e 3d 29 18 53 ba 5a 13 c9 c3"),
+            hex!("52 27 cb 12 29 89 77 35 c0 21 b0 41 73 93 b5"),
+            hex!("52 26 7f 34 ea 14 97 52 5a af 18 f1 f9 f1 fc"),
+            hex!("52 24 48 4a 26 77 70 11 2a 13 38 3e a5 2d 3a"),
+            hex!("52 20 22 50 49 21 04 98 21 25 d3 96 4d a3 a2"),
+            hex!("52 27 cb 12 29 89 77 35 c0 21 b0 41 73 93 b5"),
+            hex!("52 25 01 9d 5b 6e 1d d1 87 b9 45 3c df 06 ca"),
+            hex!("52 20 22 50 49 21 04 98 21 25 d3 96 4d a3 a2"),
+            hex!("52 20 22 50 49 21 04 98 21 25 d3 96 4d a3 a2"),
+            hex!("52 26 7f 34 ea 14 97 52 5a af 18 f1 f9 f1 fc"),
+            hex!("52 21 84 1e 1d e4 d4 58 c0 e9 84 24 76 e0 04"),
+            hex!("52 27 cb 12 29 89 77 35 c0 21 b0 41 73 93 b5"),
+            hex!("52 22 66 6c f3 79 58 de 28 51 97 a2 63 53 f1"),
+        ];
+        let mut collect = CollectDsm::new();
+
+        for (j, hkroot) in hkroots.iter().enumerate() {
+            let ret = collect.feed(
+                DsmHeader(hkroot[1..2].try_into().unwrap()),
+                hkroot[2..].try_into().unwrap(),
+            );
+            if j != hkroots.len() - 1 {
+                assert!(ret.is_none());
+                assert!(!collect.done);
+            } else {
+                assert_eq!(
+                    ret,
+                    Some(
+                        &hex!(
+                            "22 50 49 21 04 98 21 25 d3 96 4d a3 a2 84 1e 1d
+                             e4 d4 58 c0 e9 84 24 76 e0 04 66 6c f3 79 58 de
+                             28 51 97 a2 63 53 f1 a4 c6 6d 7e 3d 29 18 53 ba
+                             5a 13 c9 c3 48 4a 26 77 70 11 2a 13 38 3e a5 2d
+                             3a 01 9d 5b 6e 1d d1 87 b9 45 3c df 06 ca 7f 34
+                             ea 14 97 52 5a af 18 f1 f9 f1 fc cb 12 29 89 77
+                             35 c0 21 b0 41 73 93 b5"
+                        )[..]
+                    )
+                );
+                assert!(collect.done);
+            }
+        }
+    }
+}
