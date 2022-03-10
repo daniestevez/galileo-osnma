@@ -17,3 +17,5 @@ pub type MackMessage = [u8; MACK_MESSAGE_BYTES];
 
 pub const DSM_BLOCK_BYTES: usize = 13;
 pub type DsmBlock = [u8; DSM_BLOCK_BYTES];
+
+pub type BitSlice = bitvec::slice::BitSlice<u8, bitvec::order::Msb0>;

@@ -1,5 +1,5 @@
 #[cfg(all(feature = "galmon", feature = "pem"))]
-use galileo_osnma::bitfields::{DsmHeader, DsmKroot, NmaHeader};
+use galileo_osnma::bitfields::{DsmHeader, DsmKroot, Mack, NmaHeader};
 #[cfg(all(feature = "galmon", feature = "pem"))]
 use galileo_osnma::dsm::CollectDsm;
 #[cfg(all(feature = "galmon", feature = "pem"))]
@@ -36,6 +36,7 @@ fn main() -> std::io::Result<()> {
     let mut read = ReadTransport::new(std::io::stdin());
     let mut subframe = CollectSubframe::new();
     let mut dsm = CollectDsm::new();
+    let mut sizes = None;
     loop {
         let packet = read.read_packet()?;
         if let Some(
@@ -49,7 +50,7 @@ fn main() -> std::io::Result<()> {
                 // no OSNMA data in this word
                 continue;
             }
-            if let Some((hkroot, _mack)) = subframe.feed(
+            if let Some((hkroot, mack)) = subframe.feed(
                 osnma[..].try_into().unwrap(),
                 inav.gnss_wn.try_into().unwrap(),
                 inav.gnss_tow,
@@ -62,6 +63,7 @@ fn main() -> std::io::Result<()> {
                 let dsm_block = &hkroot[2..].try_into().unwrap();
                 if let Some(dsm) = dsm.feed(dsm_header, dsm_block) {
                     let dsm_kroot = DsmKroot(dsm);
+                    sizes = Some((dsm_kroot.key_size().unwrap(), dsm_kroot.tag_size().unwrap()));
                     if !dsm_kroot.check_padding(nma_header) {
                         log::error!("wrong DSM-KROOT padding");
                     } else {
@@ -72,6 +74,10 @@ fn main() -> std::io::Result<()> {
                     } else {
                         log::info!("correct DSM-KROOT ECDSA signature");
                     }
+                }
+                if let Some((key_size, tag_size)) = sizes {
+                    let mack = Mack::new(mack, key_size, tag_size);
+                    log::info!("mack = {:?}", mack);
                 }
             }
         }

@@ -16,6 +16,7 @@ pem = ["ecdsa/pkcs8", "spki"]
 
 [dependencies]
 aes = "0.8"
+bitvec = { version = "1", default-features = false }
 bytes = { version = "1.1", optional = true }
 cmac = "0.7"
 ecdsa = "0.13"

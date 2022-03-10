@@ -1,4 +1,5 @@
-use crate::types::{Towh, Wn};
+use crate::types::{BitSlice, MackMessage, Towh, Wn, MACK_MESSAGE_BYTES};
+use bitvec::prelude::*;
 use core::fmt;
 use p256::ecdsa::{
     signature::{Signature as SignatureTrait, Verifier},
@@ -329,6 +330,124 @@ impl fmt::Debug for DsmKroot<'_> {
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+pub struct Mack<'a> {
+    data: &'a BitSlice,
+    key_size: usize,
+    tag_size: usize,
+}
+
+impl<'a> Mack<'a> {
+    pub fn new(data: &MackMessage, key_size: usize, tag_size: usize) -> Mack {
+        Mack {
+            data: BitSlice::from_slice(data),
+            key_size,
+            tag_size,
+        }
+    }
+
+    pub fn key_size(&self) -> usize {
+        self.key_size
+    }
+
+    pub fn tag_size(&self) -> usize {
+        self.tag_size
+    }
+
+    pub fn tag0(&self) -> &BitSlice {
+        &self.data[..self.tag_size()]
+    }
+
+    pub fn macseq(&self) -> u16 {
+        let macseq_size = 12;
+        self.data[self.tag_size()..self.tag_size() + macseq_size].load_be::<u16>()
+    }
+
+    pub fn tag_and_info(&self, n: usize) -> TagAndInfo {
+        assert!(0 < n && n < self.num_tags());
+        let size = self.tag_size() + 16;
+        TagAndInfo {
+            data: &self.data[size * n..size * (n + 1)],
+        }
+    }
+
+    pub fn num_tags(&self) -> usize {
+        (8 * MACK_MESSAGE_BYTES - self.key_size()) / (self.tag_size() + 16)
+    }
+
+    pub fn key(&self) -> &BitSlice {
+        let start = (self.tag_size() + 16) * self.num_tags();
+        &self.data[start..start + self.key_size()]
+    }
+}
+
+impl fmt::Debug for Mack<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut dbg = f.debug_struct("Mack");
+        dbg.field("tag0", &self.tag0())
+            .field("macseq", &self.macseq());
+        for tag in 1..self.num_tags() {
+            dbg.field("tag", &self.tag_and_info(tag));
+        }
+        dbg.field("key", &self.key()).finish()
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+pub struct TagAndInfo<'a> {
+    data: &'a BitSlice,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Prnd {
+    GalileoSvid(u8),
+    GalileoConstellation,
+    Reserved,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Adkd {
+    InavCed,
+    InavTiming,
+    SlowMac,
+    Reserved,
+}
+
+impl<'a> TagAndInfo<'a> {
+    pub fn tag(&self) -> &BitSlice {
+        &self.data[..self.data.len() - 16]
+    }
+
+    pub fn prnd(&self) -> Prnd {
+        let len = self.data.len();
+        match self.data[len - 16..len - 8].load_be::<u8>() {
+            n @ 1..=36 => Prnd::GalileoSvid(n),
+            255 => Prnd::GalileoConstellation,
+            _ => Prnd::Reserved,
+        }
+    }
+
+    pub fn adkd(&self) -> Adkd {
+        let len = self.data.len();
+        match self.data[len - 8..len - 4].load_be::<u8>() {
+            0 => Adkd::InavCed,
+            4 => Adkd::InavTiming,
+            12 => Adkd::SlowMac,
+            _ => Adkd::Reserved,
+        }
+    }
+}
+
+impl fmt::Debug for TagAndInfo<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TagAndInfo")
+            .field("tag", &self.tag())
+            .field("prnd", &self.prnd())
+            .field("adkd", &self.adkd())
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -398,5 +517,59 @@ mod test {
         let nma_header = [0x52];
         let nma_header = NmaHeader(&nma_header);
         assert!(dsm.check_padding(nma_header));
+    }
+
+    #[test]
+    fn mack() {
+        // MACK broadcast on 2022-03-07 9:00 UTC
+        let mack = hex!(
+            "
+            11 55 d3 71 f2 1f 30 a8 e4 ec e0 c0 1b 07 6d 17
+            7d 64 03 12 05 d4 02 7e 77 13 15 c0 4c ca 1c 16
+            99 1a 05 48 91 07 a7 f7 0e c5 42 b4 19 da 6a da
+            1c 0a 3d 6f 56 a5 e5 dc 59 a7 00 00"
+        );
+        let key_size = 128;
+        let tag_size = 40;
+        let mack = Mack::new(&mack, key_size, tag_size);
+        assert_eq!(mack.key_size(), key_size);
+        assert_eq!(mack.tag_size(), tag_size);
+        assert_eq!(mack.tag0(), BitSlice::from_slice(&hex!("11 55 d3 71 f2")));
+        assert_eq!(mack.macseq(), 0x1f3);
+        assert_eq!(mack.num_tags(), 6);
+        assert_eq!(
+            mack.tag_and_info(1).tag(),
+            BitSlice::from_slice(&hex!("a8 e4 ec e0 c0"))
+        );
+        assert_eq!(mack.tag_and_info(1).prnd(), Prnd::GalileoSvid(0x1b));
+        assert_eq!(mack.tag_and_info(1).adkd(), Adkd::InavCed);
+        assert_eq!(
+            mack.tag_and_info(2).tag(),
+            BitSlice::from_slice(&hex!("6d 17 7d 64 03"))
+        );
+        assert_eq!(mack.tag_and_info(2).prnd(), Prnd::GalileoSvid(0x12));
+        assert_eq!(mack.tag_and_info(2).adkd(), Adkd::InavCed);
+        assert_eq!(
+            mack.tag_and_info(3).tag(),
+            BitSlice::from_slice(&hex!("d4 02 7e 77 13"))
+        );
+        assert_eq!(mack.tag_and_info(3).prnd(), Prnd::GalileoSvid(0x15));
+        assert_eq!(mack.tag_and_info(3).adkd(), Adkd::SlowMac);
+        assert_eq!(
+            mack.tag_and_info(4).tag(),
+            BitSlice::from_slice(&hex!("4c ca 1c 16 99"))
+        );
+        assert_eq!(mack.tag_and_info(4).prnd(), Prnd::GalileoSvid(0x1a));
+        assert_eq!(mack.tag_and_info(4).adkd(), Adkd::InavCed);
+        assert_eq!(
+            mack.tag_and_info(5).tag(),
+            BitSlice::from_slice(&hex!("48 91 07 a7 f7"))
+        );
+        assert_eq!(mack.tag_and_info(5).prnd(), Prnd::GalileoSvid(0x0e));
+        assert_eq!(mack.tag_and_info(5).adkd(), Adkd::SlowMac);
+        assert_eq!(
+            mack.key(),
+            BitSlice::from_slice(&hex!("42 b4 19 da 6a da 1c 0a 3d 6f 56 a5 e5 dc 59 a7"))
+        );
     }
 }
