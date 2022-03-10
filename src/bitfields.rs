@@ -29,8 +29,12 @@ pub enum ChainAndPubkeyStatus {
 }
 
 impl<'a> NmaHeader<'a> {
+    fn bits(&self) -> &BitSlice {
+        &BitSlice::from_slice(self.0)
+    }
+
     pub fn nma_status(&self) -> NmaStatus {
-        match self.value() >> 6 {
+        match self.bits()[..2].load_be::<u8>() {
             0 => NmaStatus::Reserved,
             1 => NmaStatus::Test,
             2 => NmaStatus::Operational,
@@ -40,23 +44,19 @@ impl<'a> NmaHeader<'a> {
     }
 
     pub fn chain_id(&self) -> u8 {
-        (self.value() >> 4) & 0x3
+        self.bits()[2..4].load_be::<u8>()
     }
 
     pub fn chain_and_pubkey_status(&self) -> ChainAndPubkeyStatus {
-        match (self.value() >> 1) & 0x7 {
+        match self.bits()[4..7].load_be::<u8>() {
             0 | 6 | 7 => ChainAndPubkeyStatus::Reserved,
             1 => ChainAndPubkeyStatus::Nominal,
             2 => ChainAndPubkeyStatus::EndOfChain,
             3 => ChainAndPubkeyStatus::ChainRevoked,
             4 => ChainAndPubkeyStatus::NewPublicKey,
             5 => ChainAndPubkeyStatus::PublicKeyRevoked,
-            _ => unreachable!(),
+            _ => unreachable!(), // we are only reading 3 bits
         }
-    }
-
-    fn value(&self) -> u8 {
-        self.0[0]
     }
 }
 
@@ -80,12 +80,16 @@ pub enum DsmType {
 }
 
 impl<'a> DsmHeader<'a> {
+    fn bits(&self) -> &BitSlice {
+        &BitSlice::from_slice(self.0)
+    }
+
     pub fn dsm_id(&self) -> u8 {
-        self.value() >> 4
+        self.bits()[..4].load_be()
     }
 
     pub fn dsm_block_id(&self) -> u8 {
-        self.value() & 0xf
+        self.bits()[4..8].load_be()
     }
 
     pub fn dsm_type(&self) -> DsmType {
@@ -94,10 +98,6 @@ impl<'a> DsmHeader<'a> {
         } else {
             DsmType::Kroot
         }
-    }
-
-    fn value(&self) -> u8 {
-        self.0[0]
     }
 }
 
@@ -134,8 +134,12 @@ pub enum EcdsaFunction {
 }
 
 impl<'a> DsmKroot<'a> {
+    fn bits(&self) -> &BitSlice {
+        &BitSlice::from_slice(self.0)
+    }
+
     pub fn number_of_blocks(&self) -> Option<usize> {
-        match self.0[0] >> 4 {
+        match self.bits()[..4].load_be::<u8>() {
             1 => Some(7),
             2 => Some(8),
             3 => Some(9),
@@ -149,15 +153,15 @@ impl<'a> DsmKroot<'a> {
     }
 
     pub fn public_key_id(&self) -> u8 {
-        self.0[0] & 0xf
+        self.bits()[4..8].load_be::<u8>()
     }
 
     pub fn kroot_chain_id(&self) -> u8 {
-        (self.0[1] >> 6) & 0x3
+        self.bits()[8..10].load_be::<u8>()
     }
 
     pub fn hash_function(&self) -> HashFunction {
-        match (self.0[1] >> 2) & 0x3 {
+        match self.bits()[12..14].load_be::<u8>() {
             0 => HashFunction::Sha256,
             2 => HashFunction::Sha3_256,
             _ => HashFunction::Reserved,
@@ -165,7 +169,7 @@ impl<'a> DsmKroot<'a> {
     }
 
     pub fn mac_function(&self) -> MacFunction {
-        match self.0[1] & 0x3 {
+        match self.bits()[14..16].load_be::<u8>() {
             0 => MacFunction::HmacSha256,
             1 => MacFunction::CmacAes,
             _ => MacFunction::Reserved,
@@ -174,7 +178,7 @@ impl<'a> DsmKroot<'a> {
 
     pub fn key_size(&self) -> Option<usize> {
         // note that all the key sizes are a multiple of 8 bits
-        let size = match self.0[2] >> 4 {
+        let size = match self.bits()[16..20].load_be::<u8>() {
             0 => Some(96),
             1 => Some(104),
             2 => Some(112),
@@ -193,7 +197,7 @@ impl<'a> DsmKroot<'a> {
     }
 
     pub fn tag_size(&self) -> Option<usize> {
-        match self.0[2] & 0xf {
+        match self.bits()[20..24].load_be::<u8>() {
             5 => Some(20),
             6 => Some(24),
             7 => Some(28),
@@ -204,23 +208,19 @@ impl<'a> DsmKroot<'a> {
     }
 
     pub fn mac_lookup_table(&self) -> u8 {
-        self.0[3]
+        self.bits()[24..32].load_be()
     }
 
     pub fn kroot_wn(&self) -> Wn {
-        (u16::from(self.0[4] & 0xf) << 8) | u16::from(self.0[5])
+        self.bits()[36..48].load_be()
     }
 
     pub fn kroot_towh(&self) -> Towh {
-        self.0[6]
+        self.bits()[48..56].load_be()
     }
 
     pub fn alpha(&self) -> u64 {
-        let mut value = 0_u64;
-        for j in 0..6 {
-            value |= u64::from(self.0[7 + j]) << (8 * (5 - j));
-        }
-        value
+        self.bits()[56..104].load_be()
     }
 
     pub fn kroot(&self) -> &[u8] {
