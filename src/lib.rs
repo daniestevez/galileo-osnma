@@ -5,4 +5,5 @@ pub mod dsm;
 #[cfg(feature = "galmon")]
 pub mod galmon;
 pub mod subframe;
+pub mod tesla;
 pub mod types;

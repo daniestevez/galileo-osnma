@@ -1,3 +1,4 @@
+use crate::tesla::ChainParameters;
 use crate::types::{BitSlice, MackMessage, Towh, Wn, MACK_MESSAGE_BYTES};
 use bitvec::prelude::*;
 use core::fmt;
@@ -306,6 +307,13 @@ impl<'a> DsmKroot<'a> {
         let signature = Signature::from_bytes(self.digital_signature())
             .expect("error serializing ECDSA signature");
         pubkey.verify(message, &signature).is_ok()
+    }
+
+    pub fn chain_parameters(&self) -> ChainParameters {
+        ChainParameters {
+            hash: self.hash_function(),
+            alpha: self.alpha(),
+        }
     }
 }
 

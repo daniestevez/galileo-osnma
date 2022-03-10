@@ -2,6 +2,12 @@ pub type Wn = u16;
 pub type Tow = u32; // Time of week in seconds
 pub type Towh = u8; // Time of week in hours
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Gst {
+    pub wn: Wn,
+    pub tow: Tow,
+}
+
 pub const HKROOT_SECTION_BYTES: usize = 1;
 pub const MACK_SECTION_BYTES: usize = 4;
 pub type HkrootSection = [u8; HKROOT_SECTION_BYTES];
