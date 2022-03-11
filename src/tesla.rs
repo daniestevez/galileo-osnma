@@ -1,32 +1,141 @@
-use crate::bitfields::HashFunction;
-use crate::types::{BitSlice, Gst};
+use crate::bitfields::{self, DsmKroot, NmaHeader, NmaStatus};
+use crate::types::{BitSlice, Gst, NotValidated, Tow, Validated};
 use bitvec::prelude::*;
+use p256::ecdsa::VerifyingKey;
 use sha2::{Digest, Sha256};
 use sha3::Sha3_256;
 
 const MAX_KEY_BYTES: usize = 32;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct Key {
-    data: [u8; MAX_KEY_BYTES],
-    size: usize,
-    gst_subframe: Gst,
+pub struct Chain {
+    status: ChainStatus,
+    id: u8,
+    // TODO: decide if CPKS needs to be included here (and how)
+    hash_function: HashFunction,
+    mac_function: MacFunction,
+    key_size_bytes: usize,
+    tag_size_bits: usize,
+    maclt: u8,
+    alpha: u64,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct ChainParameters {
-    pub hash: HashFunction,
-    pub alpha: u64,
+pub enum ChainStatus {
+    Test,
+    Operational,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum HashFunction {
+    Sha256,
+    Sha3_256,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum MacFunction {
+    HmacSha256,
+    CmacAes,
+}
+
+impl Chain {
+    pub fn from_dsm_kroot(nma_header: NmaHeader, dsm_kroot: DsmKroot) -> Result<Chain, ChainError> {
+        let status = match nma_header.nma_status() {
+            NmaStatus::Test => ChainStatus::Test,
+            NmaStatus::Operational => ChainStatus::Operational,
+            NmaStatus::DontUse => return Err(ChainError::NmaDontUse),
+            NmaStatus::Reserved => return Err(ChainError::ReservedField),
+        };
+        let hash_function = match dsm_kroot.hash_function() {
+            bitfields::HashFunction::Sha256 => HashFunction::Sha256,
+            bitfields::HashFunction::Sha3_256 => HashFunction::Sha3_256,
+            bitfields::HashFunction::Reserved => return Err(ChainError::ReservedField),
+        };
+        let mac_function = match dsm_kroot.mac_function() {
+            bitfields::MacFunction::HmacSha256 => MacFunction::HmacSha256,
+            bitfields::MacFunction::CmacAes => MacFunction::CmacAes,
+            bitfields::MacFunction::Reserved => return Err(ChainError::ReservedField),
+        };
+        let key_size_bytes = match dsm_kroot.key_size() {
+            Some(s) => {
+                assert!(s % 8 == 0);
+                s / 8
+            }
+            None => return Err(ChainError::ReservedField),
+        };
+        let tag_size_bits = dsm_kroot.tag_size().ok_or(ChainError::ReservedField)?;
+        Ok(Chain {
+            status,
+            id: nma_header.chain_id(),
+            hash_function,
+            mac_function,
+            key_size_bytes,
+            tag_size_bits,
+            maclt: dsm_kroot.mac_lookup_table(),
+            alpha: dsm_kroot.alpha(),
+        })
+    }
+
+    pub fn chain_status(&self) -> ChainStatus {
+        self.status
+    }
+
+    pub fn chain_id(&self) -> u8 {
+        self.id
+    }
+
+    pub fn hash_function(&self) -> HashFunction {
+        self.hash_function
+    }
+
+    pub fn mac_function(&self) -> MacFunction {
+        self.mac_function
+    }
+
+    pub fn key_size_bytes(&self) -> usize {
+        self.key_size_bytes
+    }
+
+    pub fn key_size_bits(&self) -> usize {
+        self.key_size_bytes() * 8
+    }
+
+    pub fn tag_size_bits(&self) -> usize {
+        self.tag_size_bits
+    }
+
+    pub fn mac_lookup_table(&self) -> u8 {
+        self.maclt
+    }
+
+    pub fn alpha(&self) -> u64 {
+        self.alpha
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum ChainError {
+    ReservedField,
+    NmaDontUse,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct Key<V> {
+    data: [u8; MAX_KEY_BYTES],
+    chain: Chain,
+    gst_subframe: Gst,
+    _validated: V,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum ValidationError {
     WrongOneWayFunction,
+    DifferentChain,
     DoesNotFollow,
     TooManyDerivations,
 }
 
-impl Key {
+impl<V> Key<V> {
     pub fn gst_subframe(&self) -> Gst {
         self.gst_subframe
     }
@@ -35,35 +144,88 @@ impl Key {
         assert!(gst.tow % 30 == 0);
     }
 
-    pub fn from_bitslice(slice: &BitSlice, gst: Gst) -> Key {
+    pub fn chain(&self) -> &Chain {
+        &self.chain
+    }
+}
+
+impl Key<NotValidated> {
+    pub fn from_bitslice(slice: &BitSlice, gst: Gst, chain: &Chain) -> Key<NotValidated> {
         Self::check_gst(gst);
         let mut data = [0; MAX_KEY_BYTES];
-        let size = slice.len();
-        assert!(size % 8 == 0);
-        BitSlice::from_slice_mut(&mut data)[..size].copy_from_bitslice(slice);
+        BitSlice::from_slice_mut(&mut data)[..chain.key_size_bytes * 8].copy_from_bitslice(slice);
         Key {
             data,
-            size,
+            chain: *chain,
             gst_subframe: gst,
+            _validated: NotValidated {},
         }
     }
 
-    pub fn from_slice(slice: &[u8], gst: Gst) -> Key {
+    pub fn from_slice(slice: &[u8], gst: Gst, chain: &Chain) -> Key<NotValidated> {
         Self::check_gst(gst);
         let mut data = [0; MAX_KEY_BYTES];
-        let size = slice.len();
-        data[..size].copy_from_slice(slice);
+        data[..chain.key_size_bytes].copy_from_slice(slice);
         Key {
             data,
-            size: 8 * size,
+            chain: *chain,
             gst_subframe: gst,
+            _validated: NotValidated {},
         }
     }
+}
 
-    pub fn one_way_function(&self, params: &ChainParameters) -> Key {
+impl<V> Key<V> {
+    fn force_valid(self) -> Key<Validated> {
+        Key {
+            data: self.data,
+            chain: self.chain,
+            gst_subframe: self.gst_subframe,
+            _validated: Validated {},
+        }
+    }
+}
+
+impl Key<Validated> {
+    pub fn from_dsm_kroot(
+        nma_header: NmaHeader,
+        dsm_kroot: DsmKroot,
+        pubkey: &VerifyingKey,
+    ) -> Result<Key<Validated>, KrootValidationError> {
+        let chain = Chain::from_dsm_kroot(nma_header, dsm_kroot)
+            .map_err(|_| KrootValidationError::WrongDsmKrootChain)?;
+        if !dsm_kroot.check_padding(nma_header) {
+            return Err(KrootValidationError::WrongDsmKrootPadding);
+        }
+        if !dsm_kroot.check_signature(nma_header, pubkey) {
+            return Err(KrootValidationError::WrongEcdsa);
+        }
+        let wn = dsm_kroot.kroot_wn();
+        let tow = Tow::from(dsm_kroot.kroot_towh()) * 3600;
+        let gst = Gst {
+            wn: if tow >= 30 { wn } else { wn - 1 },
+            tow: if tow >= 30 {
+                tow - 30
+            } else {
+                tow + 24 * 7 * 3600 - 30
+            },
+        };
+        Ok(Key::from_slice(dsm_kroot.kroot(), gst, &chain).force_valid())
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum KrootValidationError {
+    WrongDsmKrootChain,
+    WrongDsmKrootPadding,
+    WrongEcdsa,
+}
+
+impl<V: Clone> Key<V> {
+    pub fn one_way_function(&self) -> Key<V> {
         // 10 bytes are needed for GST (32 bits) || alpha (48 bits)
         let mut buffer = [0; MAX_KEY_BYTES + 10];
-        let size = self.size / 8;
+        let size = self.chain.key_size_bytes;
         buffer[..size].copy_from_slice(&self.data[..size]);
         let previous_subframe = Gst {
             wn: if self.gst_subframe.tow == 0 {
@@ -80,9 +242,9 @@ impl Key {
         let gst_bits = BitSlice::from_slice_mut(&mut buffer[size..size + 4]);
         gst_bits[0..12].store_be(previous_subframe.wn);
         gst_bits[12..32].store_be(previous_subframe.tow);
-        buffer[size + 4..size + 10].copy_from_slice(&params.alpha.to_be_bytes()[2..]);
+        buffer[size + 4..size + 10].copy_from_slice(&self.chain.alpha.to_be_bytes()[2..]);
         let mut new_key = [0; MAX_KEY_BYTES];
-        match params.hash {
+        match self.chain.hash_function {
             HashFunction::Sha256 => {
                 let mut hash = Sha256::new();
                 hash.update(&buffer[..size + 10]);
@@ -95,21 +257,21 @@ impl Key {
                 let hash = hash.finalize();
                 new_key[..size].copy_from_slice(&hash[..size]);
             }
-            HashFunction::Reserved => {
-                panic!(
-                    "attempted to compute one-way-function using\
-                        a reserved value for the hash function parameter"
-                );
-            }
         };
         Key {
             data: new_key,
-            size: self.size,
+            chain: self.chain,
             gst_subframe: previous_subframe,
+            _validated: self._validated.clone(),
         }
     }
+}
 
-    pub fn validate(&self, other: &Key, params: &ChainParameters) -> Result<(), ValidationError> {
+impl Key<Validated> {
+    pub fn validate<V: Clone>(&self, other: &Key<V>) -> Result<Key<Validated>, ValidationError> {
+        if self.chain != other.chain {
+            return Err(ValidationError::DifferentChain);
+        }
         if self.gst_subframe.wn > other.gst_subframe.wn
             || (self.gst_subframe.tow == other.gst_subframe.tow
                 && self.gst_subframe.tow >= other.gst_subframe.tow)
@@ -127,13 +289,14 @@ impl Key {
         if derivations > 3000 {
             return Err(ValidationError::TooManyDerivations);
         }
-        let mut derived_key = *other;
+        let mut derived_key = other.clone();
         for _ in 0..derivations {
-            derived_key = derived_key.one_way_function(params);
+            derived_key = derived_key.one_way_function();
         }
         assert!(derived_key.gst_subframe == self.gst_subframe);
-        if derived_key == *self {
-            Ok(())
+        let size = self.chain.key_size_bytes;
+        if derived_key.data[..size] == self.data[..size] {
+            Ok(other.clone().force_valid())
         } else {
             Err(ValidationError::WrongOneWayFunction)
         }
@@ -145,15 +308,30 @@ mod test {
     use super::*;
     use hex_literal::hex;
 
+    fn test_chain() -> Chain {
+        Chain {
+            status: ChainStatus::Test,
+            id: 1,
+            hash_function: HashFunction::Sha256,
+            mac_function: MacFunction::HmacSha256,
+            key_size_bytes: 16,
+            tag_size_bits: 40,
+            maclt: 0x21,
+            alpha: 0x25d3964da3a2,
+        }
+    }
+
     #[test]
     fn one_way_function() {
         // Keys broadcast on 2022-03-07 ~9:00 UTC
+        let chain = test_chain();
         let k0 = Key::from_slice(
             &hex!("42 b4 19 da 6a da 1c 0a 3d 6f 56 a5 e5 dc 59 a7"),
             Gst {
                 wn: 1176,
                 tow: 120930,
             },
+            &chain,
         );
         let k1 = Key::from_slice(
             &hex!("95 42 aa d4 7a bf 39 ba fe 56 68 61 af e8 80 b2"),
@@ -161,35 +339,33 @@ mod test {
                 wn: 1176,
                 tow: 120960,
             },
+            &chain,
         );
-        let chain = ChainParameters {
-            hash: HashFunction::Sha256,
-            alpha: 0x25d3964da3a2,
-        };
-        assert_eq!(k1.one_way_function(&chain), k0);
+        assert_eq!(k1.one_way_function(), k0);
     }
 
     #[test]
     fn validation_kroot() {
         // KROOT broadcast on 2022-03-07 ~9:00 UTC
+        let chain = test_chain();
         let kroot = Key::from_slice(
             &hex!("84 1e 1d e4 d4 58 c0 e9 84 24 76 e0 04 66 6c f3"),
             Gst {
                 wn: 1176,
                 tow: 0x21 * 3600 - 30, // towh in DSM-KROOT was 0x21
             },
+            &chain,
         );
+        // Force KROOT to be valid manually
+        let kroot = kroot.force_valid();
         let key = Key::from_slice(
             &hex!("42 b4 19 da 6a da 1c 0a 3d 6f 56 a5 e5 dc 59 a7"),
             Gst {
                 wn: 1176,
                 tow: 120930,
             },
+            &chain,
         );
-        let chain = ChainParameters {
-            hash: HashFunction::Sha256,
-            alpha: 0x25d3964da3a2,
-        };
-        assert!(kroot.validate(&key, &chain).is_ok());
+        assert!(kroot.validate(&key).is_ok());
     }
 }

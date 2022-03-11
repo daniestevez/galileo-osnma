@@ -10,6 +10,8 @@ use galileo_osnma::galmon::transport::ReadTransport;
 use galileo_osnma::subframe::CollectSubframe;
 #[cfg(all(feature = "galmon", feature = "pem"))]
 use galileo_osnma::tesla::Key;
+#[cfg(all(feature = "galmon", feature = "pem"))]
+use galileo_osnma::types::Validated;
 
 #[cfg(all(feature = "galmon", feature = "pem"))]
 use p256::ecdsa::VerifyingKey;
@@ -38,9 +40,7 @@ fn main() -> std::io::Result<()> {
     let mut read = ReadTransport::new(std::io::stdin());
     let mut subframe = CollectSubframe::new();
     let mut dsm = CollectDsm::new();
-    let mut sizes = None;
-    let mut chain_params = None;
-    let mut current_tesla_key: Option<Key> = None;
+    let mut tesla: Option<Key<Validated>> = None;
     loop {
         let packet = read.read_packet()?;
         if let Some(
@@ -67,65 +67,41 @@ fn main() -> std::io::Result<()> {
                 let dsm_block = &hkroot[2..].try_into().unwrap();
                 if let Some(dsm) = dsm.feed(dsm_header, dsm_block) {
                     let dsm_kroot = DsmKroot(dsm);
-                    sizes = Some((dsm_kroot.key_size().unwrap(), dsm_kroot.tag_size().unwrap()));
-                    chain_params = Some(dsm_kroot.chain_parameters());
-                    log::info!("chain_params = {:?}", chain_params);
-                    if !dsm_kroot.check_padding(nma_header) {
-                        log::error!("wrong DSM-KROOT padding");
-                    } else {
-                        log::info!("correct DSM-KROOT padding");
-                    }
-                    if !dsm_kroot.check_signature(nma_header, &pubkey) {
-                        log::error!("wrong DSM-KROOT ECDSA signature");
-                    } else {
-                        log::info!("correct DSM-KROOT ECDSA signature");
+                    match Key::from_dsm_kroot(nma_header, dsm_kroot, &pubkey) {
+                        Ok(key) => {
+                            log::info!("verified KROOT");
+                            if tesla.is_none() {
+                                tesla = Some(key);
+                                log::info!("initializing TESLA info to {:?}", tesla);
+                            }
+                        }
+                        Err(e) => log::error!("could not verify KROOT: {:?}", e),
                     }
                 }
-                if let Some((key_size, tag_size)) = sizes {
-                    let mack = Mack::new(mack, key_size, tag_size);
-                    let key = Key::from_bitslice(mack.key(), gst);
-                    log::info!("TESLA key = {:?}", key);
-                    if let Some(k) = current_tesla_key {
-                        if k.gst_subframe() == key.gst_subframe() && k != key {
-                            log::error!(
-                                "got two different TESLA keys with same GST: {:?} and {:?}",
-                                k,
-                                key
-                            );
-                        } else if k.gst_subframe() != key.gst_subframe() {
-                            let owf = key.one_way_function(&chain_params.unwrap());
-                            log::info!("got TESLA key for new GST: {:?}", key);
-                            log::info!("its OWF is {:?}", owf);
-                            log::info!("the previous TESLA key is {:?}", k);
-                            if k.gst_subframe() == owf.gst_subframe() {
-                                if k != owf {
-                                    log::error!("OWF != previous key");
-                                } else {
-                                    log::info!("OWF == previous key");
-                                }
-                            } else {
-                                log::warn!(
-                                    "OWF and previous key GSTs differ; we have skipped some keys"
-                                );
-                            }
-
-                            match k.validate(&key, &chain_params.unwrap()) {
-                                Ok(()) => log::info!(
+                if let Some(valid_key) = tesla {
+                    let mack = Mack::new(
+                        mack,
+                        valid_key.chain().key_size_bits(),
+                        valid_key.chain().tag_size_bits(),
+                    );
+                    let key = Key::from_bitslice(mack.key(), gst, valid_key.chain());
+                    if key.gst_subframe() > valid_key.gst_subframe() {
+                        match valid_key.validate(&key) {
+                            Ok(new_valid_key) => {
+                                log::info!(
                                     "new TESLA key {:?} successfully validated by {:?}",
-                                    key,
-                                    k
-                                ),
-                                Err(e) => log::error!(
-                                    "got {:?} trying to validate TESLA key {:?} using {:?}",
-                                    e,
-                                    key,
-                                    k
-                                ),
+                                    new_valid_key,
+                                    valid_key
+                                );
+                                tesla = Some(new_valid_key);
                             }
-                            current_tesla_key = Some(key);
+                            Err(e) => log::error!(
+                                "got {:?} trying to validate TESLA key {:?} using {:?}",
+                                e,
+                                key,
+                                valid_key
+                            ),
                         }
-                    } else {
-                        current_tesla_key = Some(key);
                     }
                 }
             }
