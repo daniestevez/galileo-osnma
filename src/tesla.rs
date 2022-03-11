@@ -19,6 +19,13 @@ pub struct ChainParameters {
     pub alpha: u64,
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum ValidationError {
+    WrongOneWayFunction,
+    DoesNotFollow,
+    TooManyDerivations,
+}
+
 impl Key {
     pub fn gst_subframe(&self) -> Gst {
         self.gst_subframe
@@ -101,6 +108,36 @@ impl Key {
             gst_subframe: previous_subframe,
         }
     }
+
+    pub fn validate(&self, other: &Key, params: &ChainParameters) -> Result<(), ValidationError> {
+        if self.gst_subframe.wn > other.gst_subframe.wn
+            || (self.gst_subframe.tow == other.gst_subframe.tow
+                && self.gst_subframe.tow >= other.gst_subframe.tow)
+        {
+            return Err(ValidationError::DoesNotFollow);
+        }
+        let derivations = i32::from(other.gst_subframe.wn - self.gst_subframe.wn)
+            * (7 * 24 * 3600 / 30)
+            + (i32::try_from(other.gst_subframe.tow).unwrap()
+                - i32::try_from(self.gst_subframe.tow).unwrap())
+                / 30;
+        assert!(derivations >= 1);
+        // Set an arbitrary limit to the number of derivations.
+        // This is chosen to be slightly greater than 1 day.
+        if derivations > 3000 {
+            return Err(ValidationError::TooManyDerivations);
+        }
+        let mut derived_key = *other;
+        for _ in 0..derivations {
+            derived_key = derived_key.one_way_function(params);
+        }
+        assert!(derived_key.gst_subframe == self.gst_subframe);
+        if derived_key == *self {
+            Ok(())
+        } else {
+            Err(ValidationError::WrongOneWayFunction)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -130,5 +167,29 @@ mod test {
             alpha: 0x25d3964da3a2,
         };
         assert_eq!(k1.one_way_function(&chain), k0);
+    }
+
+    #[test]
+    fn validation_kroot() {
+        // KROOT broadcast on 2022-03-07 ~9:00 UTC
+        let kroot = Key::from_slice(
+            &hex!("84 1e 1d e4 d4 58 c0 e9 84 24 76 e0 04 66 6c f3"),
+            Gst {
+                wn: 1176,
+                tow: 0x21 * 3600 - 30, // towh in DSM-KROOT was 0x21
+            },
+        );
+        let key = Key::from_slice(
+            &hex!("42 b4 19 da 6a da 1c 0a 3d 6f 56 a5 e5 dc 59 a7"),
+            Gst {
+                wn: 1176,
+                tow: 120930,
+            },
+        );
+        let chain = ChainParameters {
+            hash: HashFunction::Sha256,
+            alpha: 0x25d3964da3a2,
+        };
+        assert!(kroot.validate(&key, &chain).is_ok());
     }
 }

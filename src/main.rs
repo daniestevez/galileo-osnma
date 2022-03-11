@@ -108,6 +108,20 @@ fn main() -> std::io::Result<()> {
                                     "OWF and previous key GSTs differ; we have skipped some keys"
                                 );
                             }
+
+                            match k.validate(&key, &chain_params.unwrap()) {
+                                Ok(()) => log::info!(
+                                    "new TESLA key {:?} successfully validated by {:?}",
+                                    key,
+                                    k
+                                ),
+                                Err(e) => log::error!(
+                                    "got {:?} trying to validate TESLA key {:?} using {:?}",
+                                    e,
+                                    key,
+                                    k
+                                ),
+                            }
                             current_tesla_key = Some(key);
                         }
                     } else {
