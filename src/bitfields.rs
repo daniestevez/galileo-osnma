@@ -30,7 +30,7 @@ pub enum ChainAndPubkeyStatus {
 
 impl<'a> NmaHeader<'a> {
     fn bits(&self) -> &BitSlice {
-        &BitSlice::from_slice(self.0)
+        BitSlice::from_slice(self.0)
     }
 
     pub fn nma_status(&self) -> NmaStatus {
@@ -81,7 +81,7 @@ pub enum DsmType {
 
 impl<'a> DsmHeader<'a> {
     fn bits(&self) -> &BitSlice {
-        &BitSlice::from_slice(self.0)
+        BitSlice::from_slice(self.0)
     }
 
     pub fn dsm_id(&self) -> u8 {
@@ -135,7 +135,7 @@ pub enum EcdsaFunction {
 
 impl<'a> DsmKroot<'a> {
     fn bits(&self) -> &BitSlice {
-        &BitSlice::from_slice(self.0)
+        BitSlice::from_slice(self.0)
     }
 
     pub fn number_of_blocks(&self) -> Option<usize> {
