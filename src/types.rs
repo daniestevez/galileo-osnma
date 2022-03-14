@@ -26,6 +26,9 @@ pub type DsmBlock = [u8; DSM_BLOCK_BYTES];
 
 pub type BitSlice = bitvec::slice::BitSlice<u8, bitvec::order::Msb0>;
 
+pub const INAV_WORD_BYTES: usize = 16;
+pub type InavWord = [u8; INAV_WORD_BYTES];
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Validated {}
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]

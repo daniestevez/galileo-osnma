@@ -7,6 +7,8 @@ use galileo_osnma::galmon::navmon::nav_mon_message::GalileoInav;
 #[cfg(all(feature = "galmon", feature = "pem"))]
 use galileo_osnma::galmon::transport::ReadTransport;
 #[cfg(all(feature = "galmon", feature = "pem"))]
+use galileo_osnma::navmessage::CollectNavMessage;
+#[cfg(all(feature = "galmon", feature = "pem"))]
 use galileo_osnma::subframe::CollectSubframe;
 #[cfg(all(feature = "galmon", feature = "pem"))]
 use galileo_osnma::tesla::Key;
@@ -41,15 +43,21 @@ fn main() -> std::io::Result<()> {
     let mut subframe = CollectSubframe::new();
     let mut dsm = CollectDsm::new();
     let mut tesla: Option<Key<Validated>> = None;
+    let mut navmessage = CollectNavMessage::new();
     loop {
         let packet = read.read_packet()?;
         if let Some(
             inav @ GalileoInav {
+                contents: inav_word,
                 reserved1: Some(osnma),
                 ..
             },
         ) = &packet.gi
         {
+            navmessage.feed(
+                inav_word[..].try_into().unwrap(),
+                inav.gnss_sv.try_into().unwrap(),
+            );
             if osnma.iter().all(|&x| x == 0) {
                 // no OSNMA data in this word
                 continue;
