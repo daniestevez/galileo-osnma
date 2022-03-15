@@ -203,14 +203,7 @@ impl Key<Validated> {
         }
         let wn = dsm_kroot.kroot_wn();
         let tow = Tow::from(dsm_kroot.kroot_towh()) * 3600;
-        let gst = Gst {
-            wn: if tow >= 30 { wn } else { wn - 1 },
-            tow: if tow >= 30 {
-                tow - 30
-            } else {
-                tow + 24 * 7 * 3600 - 30
-            },
-        };
+        let gst = Gst { wn, tow }.add_seconds(-30);
         Ok(Key::from_slice(dsm_kroot.kroot(), gst, &chain).force_valid())
     }
 }
@@ -228,18 +221,7 @@ impl<V: Clone> Key<V> {
         let mut buffer = [0; MAX_KEY_BYTES + 10];
         let size = self.chain.key_size_bytes;
         buffer[..size].copy_from_slice(&self.data[..size]);
-        let previous_subframe = Gst {
-            wn: if self.gst_subframe.tow == 0 {
-                self.gst_subframe.wn - 1
-            } else {
-                self.gst_subframe.wn
-            },
-            tow: if self.gst_subframe.tow == 0 {
-                7 * 24 * 3600 - 30
-            } else {
-                self.gst_subframe.tow - 30
-            },
-        };
+        let previous_subframe = self.gst_subframe.add_seconds(-30);
         let gst_bits = BitSlice::from_slice_mut(&mut buffer[size..size + 4]);
         gst_bits[0..12].store_be(previous_subframe.wn);
         gst_bits[12..32].store_be(previous_subframe.tow);
