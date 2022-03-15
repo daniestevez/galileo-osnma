@@ -1,24 +1,22 @@
-use crate::types::{BitSlice, InavWord};
+use crate::types::{BitSlice, InavWord, NUM_SVNS};
 use bitvec::prelude::*;
-
-const SVNS: usize = 36;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct CollectNavMessage {
-    ced_and_status: [CedAndStatus; SVNS],
+    ced_and_status: [CedAndStatus; NUM_SVNS],
     timing_parameters: TimingParameters,
 }
 
 impl CollectNavMessage {
     pub fn new() -> CollectNavMessage {
         CollectNavMessage {
-            ced_and_status: [CedAndStatus::new(); SVNS],
+            ced_and_status: [CedAndStatus::new(); NUM_SVNS],
             timing_parameters: TimingParameters::new(),
         }
     }
 
     fn check_svn(svn: usize) {
-        assert!((1..=SVNS).contains(&svn));
+        assert!((1..=NUM_SVNS).contains(&svn));
     }
 
     pub fn feed(&mut self, word: &InavWord, svn: usize) {

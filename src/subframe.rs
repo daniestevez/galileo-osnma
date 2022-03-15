@@ -1,17 +1,16 @@
 use crate::types::{
     Gst, HkrootMessage, HkrootSection, MackMessage, MackSection, OsnmaDataMessage, Tow, Wn,
-    HKROOT_MESSAGE_BYTES, HKROOT_SECTION_BYTES, MACK_MESSAGE_BYTES, MACK_SECTION_BYTES,
+    HKROOT_MESSAGE_BYTES, HKROOT_SECTION_BYTES, MACK_MESSAGE_BYTES, MACK_SECTION_BYTES, NUM_SVNS,
 };
 
 const WORDS_PER_SUBFRAME: u8 = 15;
 const SECONDS_PER_SUBFRAME: Tow = 30;
-const SVNS: usize = 36;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct CollectSubframe {
-    hkroot: [HkrootMessage; SVNS],
-    mack: [MackMessage; SVNS],
-    num_valid: [u8; SVNS],
+    hkroot: [HkrootMessage; NUM_SVNS],
+    mack: [MackMessage; NUM_SVNS],
+    num_valid: [u8; NUM_SVNS],
     wn: Wn,
     subframe: Tow,
 }
@@ -19,9 +18,9 @@ pub struct CollectSubframe {
 impl CollectSubframe {
     pub fn new() -> CollectSubframe {
         CollectSubframe {
-            hkroot: [[0; HKROOT_MESSAGE_BYTES]; SVNS],
-            mack: [[0; MACK_MESSAGE_BYTES]; SVNS],
-            num_valid: [0; SVNS],
+            hkroot: [[0; HKROOT_MESSAGE_BYTES]; NUM_SVNS],
+            mack: [[0; MACK_MESSAGE_BYTES]; NUM_SVNS],
+            num_valid: [0; NUM_SVNS],
             wn: 0,
             subframe: 0,
         }
@@ -55,7 +54,7 @@ impl CollectSubframe {
             );
             self.wn = wn;
             self.subframe = subframe;
-            for s in 0..SVNS {
+            for s in 0..NUM_SVNS {
                 self.num_valid[s] = 0;
             }
         }

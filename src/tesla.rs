@@ -1,6 +1,7 @@
 use crate::bitfields::{self, DsmKroot, NmaHeader, NmaStatus};
 use crate::types::{BitSlice, Gst, NotValidated, Tow, Validated};
 use bitvec::prelude::*;
+use hmac::{Hmac, Mac};
 use p256::ecdsa::VerifyingKey;
 use sha2::{Digest, Sha256};
 use sha3::Sha3_256;
@@ -268,7 +269,10 @@ impl<V: Clone> Key<V> {
 }
 
 impl Key<Validated> {
-    pub fn validate<V: Clone>(&self, other: &Key<V>) -> Result<Key<Validated>, ValidationError> {
+    pub fn validate_key<V: Clone>(
+        &self,
+        other: &Key<V>,
+    ) -> Result<Key<Validated>, ValidationError> {
         if self.chain != other.chain {
             return Err(ValidationError::DifferentChain);
         }
@@ -299,6 +303,43 @@ impl Key<Validated> {
             Ok(other.clone().force_valid())
         } else {
             Err(ValidationError::WrongOneWayFunction)
+        }
+    }
+
+    pub fn validate_tag0(
+        &self,
+        tag0: &BitSlice,
+        tag_gst: Gst,
+        prna: u8,
+        navdata: &BitSlice,
+    ) -> bool {
+        // This is large enough to fit all the message for ADKD=0 and 12
+        // (which have the largest navdata)
+        const BUFF_SIZE: usize = 75;
+        let mut buffer = [0u8; BUFF_SIZE];
+        buffer[0] = prna;
+        let gst_bits = BitSlice::from_slice_mut(&mut buffer[1..5]);
+        gst_bits[0..12].store_be(tag_gst.wn);
+        gst_bits[12..32].store_be(tag_gst.tow);
+        buffer[5] = 1; // CTR field
+        let remaining_bits = BitSlice::from_slice_mut(&mut buffer[6..]);
+        remaining_bits[..2].store_be(match self.chain.status {
+            ChainStatus::Test => 1,
+            ChainStatus::Operational => 2,
+        });
+        remaining_bits[2..2 + navdata.len()].copy_from_bitslice(navdata);
+        let num_bytes = 6 + (2 + navdata.len() + 7) / 8;
+
+        match self.chain.mac_function {
+            MacFunction::HmacSha256 => {
+                let key = &self.data[..self.chain.key_size_bytes];
+                let mut hash = Hmac::<Sha256>::new_from_slice(key).unwrap();
+                hash.update(&buffer[..num_bytes]);
+                let hash = hash.finalize().into_bytes();
+                let computed = BitSlice::from_slice(&hash);
+                computed[..tag0.len()] == tag0
+            }
+            MacFunction::CmacAes => todo!(),
         }
     }
 }
@@ -366,6 +407,36 @@ mod test {
             },
             &chain,
         );
-        assert!(kroot.validate(&key).is_ok());
+        assert!(kroot.validate_key(&key).is_ok());
+    }
+
+    #[test]
+    fn tag0() {
+        // Data corresponding to E21 on 2022-03-07 ~9:00 UTC
+        let tag0 = BitSlice::from_slice(&hex!("8f 54 58 88 71"));
+        let tag0_gst = Gst {
+            wn: 1176,
+            tow: 121050,
+        };
+        let prna = 21;
+        let chain = test_chain();
+        let key = Key::from_slice(
+            &hex!("19 58 e7 76 6f b4 08 cb d6 a8 de fc e4 c7 d5 66"),
+            Gst {
+                wn: 1176,
+                tow: 121080,
+            },
+            &chain,
+        )
+        .force_valid();
+        let navdata_adkd0 = &BitSlice::from_slice(&hex!(
+            "
+            12 07 d0 ec 19 90 2e 00 1f e1 06 aa 04 ed 97 12
+            11 f0 56 1f 49 ea ce 67 88 4d 18 57 81 9f 12 3f
+            f0 37 48 93 42 c3 c2 96 c7 65 c3 83 1a c4 85 40
+            01 7f fd 87 d0 fe 85 ee 31 ff f6 20 0c 68 0b fe
+            48 00 50 14 00"
+        ))[..549];
+        assert!(key.validate_tag0(tag0, tag0_gst, prna, navdata_adkd0));
     }
 }

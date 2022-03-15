@@ -8,6 +8,28 @@ pub struct Gst {
     pub tow: Tow,
 }
 
+impl Gst {
+    pub fn add_seconds(&self, seconds: i32) -> Self {
+        let secs_in_week = 24 * 3600 * 7;
+        let weeks = seconds / secs_in_week;
+        let seconds = seconds - weeks * secs_in_week;
+        let mut tow = i32::try_from(self.tow).unwrap() + seconds;
+        let mut wn = self.wn + u16::try_from(weeks).unwrap();
+        if tow < 0 {
+            wn -= 1;
+            tow += secs_in_week;
+        } else if tow >= secs_in_week {
+            wn += 1;
+            tow -= secs_in_week;
+        };
+        assert!((0..secs_in_week).contains(&tow));
+        Gst {
+            tow: tow.try_into().unwrap(),
+            wn,
+        }
+    }
+}
+
 pub const HKROOT_SECTION_BYTES: usize = 1;
 pub const MACK_SECTION_BYTES: usize = 4;
 pub type HkrootSection = [u8; HKROOT_SECTION_BYTES];
@@ -33,3 +55,5 @@ pub type InavWord = [u8; INAV_WORD_BYTES];
 pub struct Validated {}
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct NotValidated {}
+
+pub const NUM_SVNS: usize = 36;

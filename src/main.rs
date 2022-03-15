@@ -7,6 +7,8 @@ use galileo_osnma::galmon::navmon::nav_mon_message::GalileoInav;
 #[cfg(all(feature = "galmon", feature = "pem"))]
 use galileo_osnma::galmon::transport::ReadTransport;
 #[cfg(all(feature = "galmon", feature = "pem"))]
+use galileo_osnma::mack::MackStorage;
+#[cfg(all(feature = "galmon", feature = "pem"))]
 use galileo_osnma::navmessage::CollectNavMessage;
 #[cfg(all(feature = "galmon", feature = "pem"))]
 use galileo_osnma::subframe::CollectSubframe;
@@ -44,6 +46,7 @@ fn main() -> std::io::Result<()> {
     let mut dsm = CollectDsm::new();
     let mut tesla: Option<Key<Validated>> = None;
     let mut navmessage = CollectNavMessage::new();
+    let mut mack_storage = MackStorage::new();
     loop {
         let packet = read.read_packet()?;
         if let Some(
@@ -68,6 +71,7 @@ fn main() -> std::io::Result<()> {
                 inav.gnss_tow,
                 inav.gnss_sv.try_into().unwrap(),
             ) {
+                mack_storage.store(mack, inav.gnss_sv.try_into().unwrap(), gst);
                 let nma_header = &hkroot[..1].try_into().unwrap();
                 let nma_header = NmaHeader(nma_header);
                 let dsm_header = &hkroot[1..2].try_into().unwrap();
@@ -94,7 +98,7 @@ fn main() -> std::io::Result<()> {
                     );
                     let key = Key::from_bitslice(mack.key(), gst, valid_key.chain());
                     if key.gst_subframe() > valid_key.gst_subframe() {
-                        match valid_key.validate(&key) {
+                        match valid_key.validate_key(&key) {
                             Ok(new_valid_key) => {
                                 log::info!(
                                     "new TESLA key {:?} successfully validated by {:?}",
@@ -109,6 +113,36 @@ fn main() -> std::io::Result<()> {
                                 key,
                                 valid_key
                             ),
+                        }
+                    }
+                    if let Some(navdata) =
+                        navmessage.ced_and_status(inav.gnss_sv.try_into().unwrap())
+                    {
+                        let previous_gst = gst.add_seconds(-30);
+                        if let Some(previous_mack) =
+                            mack_storage.get(inav.gnss_sv.try_into().unwrap(), previous_gst)
+                        {
+                            let previous_mack = Mack::new(
+                                previous_mack,
+                                valid_key.chain().key_size_bits(),
+                                valid_key.chain().tag_size_bits(),
+                            );
+
+                            log::info!(
+                                "attempting to validate tag0 for E{:02} and {:?}",
+                                inav.gnss_sv,
+                                previous_gst
+                            );
+                            if tesla.unwrap().validate_tag0(
+                                previous_mack.tag0(),
+                                previous_gst,
+                                inav.gnss_sv.try_into().unwrap(),
+                                navdata,
+                            ) {
+                                log::info!("tag0 authentication correct");
+                            } else {
+                                log::error!("tag0 authentication wrong");
+                            }
                         }
                     }
                 }
