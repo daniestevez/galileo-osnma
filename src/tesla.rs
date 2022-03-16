@@ -305,7 +305,8 @@ impl Key<Validated> {
         const BUFF_SIZE: usize = 76;
         let mut buffer = [0u8; BUFF_SIZE];
         buffer[0] = prnd;
-        let num_bytes = self.fill_common_tag_message(&mut buffer[1..], tag_gst, prna, ctr, navdata);
+        let num_bytes =
+            1 + self.fill_common_tag_message(&mut buffer[1..], tag_gst, prna, ctr, navdata);
         self.check_tag(&buffer[..num_bytes], tag)
     }
 
