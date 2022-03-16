@@ -84,7 +84,6 @@ impl OsnmaDsm {
         }
 
         self.data.validate_key(mack, gst);
-        self.data.process_tags();
     }
 }
 
@@ -141,6 +140,7 @@ impl OsnmaData {
                             current_key
                         );
                         self.key = Some(new_valid_key);
+                        self.process_tags();
                     }
                     Err(e) => log::error!(
                         "could not validate TESLA key {:?} using {:?}: {:?}",
