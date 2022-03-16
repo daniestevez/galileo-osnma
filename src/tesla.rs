@@ -344,8 +344,7 @@ impl Key<Validated> {
             ChainStatus::Operational => 2,
         });
         remaining_bits[2..2 + navdata.len()].copy_from_bitslice(navdata);
-        let num_bytes = 6 + (2 + navdata.len() + 7) / 8;
-        num_bytes
+        6 + (2 + navdata.len() + 7) / 8 // number of bytes used by message
     }
 
     fn check_tag(&self, message: &[u8], tag: &BitSlice) -> bool {

@@ -5,7 +5,9 @@ use crate::mack::MackStorage;
 use crate::navmessage::CollectNavMessage;
 use crate::subframe::CollectSubframe;
 use crate::tesla::Key;
-use crate::types::{HkrootMessage, InavWord, MackMessage, OsnmaDataMessage, Validated, NUM_SVNS};
+use crate::types::{
+    BitSlice, HkrootMessage, InavWord, MackMessage, OsnmaDataMessage, Validated, NUM_SVNS,
+};
 
 use core::cmp::Ordering;
 use p256::ecdsa::VerifyingKey;
@@ -120,7 +122,6 @@ impl OsnmaData {
         match current_key.gst_subframe().cmp(&new_key.gst_subframe()) {
             Ordering::Equal => {
                 // we already have this key; nothing to do
-                ()
             }
             Ordering::Greater => {
                 log::warn!(
@@ -172,12 +173,17 @@ impl OsnmaData {
                     current_key.chain().tag_size_bits(),
                 );
                 // Try to validate tag0
-                if let Some(adkd0) = self.navmessage.ced_and_status(svn, gst_navmessage) {
-                    if current_key.validate_tag0(mack.tag0(), gst_tags, svn_u8, adkd0) {
-                        log::info!("E{:02} {:?} tag0 correct", svn, gst_tags);
-                    } else {
-                        log::error!("E{:02} {:?} tag0 wrong", svn, gst_tags);
-                    }
+                if let Some(navdata) = self.navmessage.ced_and_status(svn, gst_navmessage) {
+                    Self::validate_tag(
+                        &current_key,
+                        mack.tag0(),
+                        Adkd::InavCed,
+                        gst_tags,
+                        svn_u8,
+                        svn_u8,
+                        0,
+                        navdata,
+                    );
                 }
                 // Try to validate InavCed and InavTiming tags
                 for j in 1..mack.num_tags() {
@@ -209,30 +215,16 @@ impl OsnmaData {
                         } else {
                             prnd
                         };
-                        if current_key.validate_tag(
+                        Self::validate_tag(
+                            &current_key,
                             tag.tag(),
+                            tag.adkd(),
                             gst_tags,
                             prnd,
                             svn_u8,
-                            (j + 1).try_into().unwrap(),
+                            j,
                             navdata,
-                        ) {
-                            log::info!(
-                                "E{:02} {:?} at {:?} tag correct (auth by E{:02})",
-                                prnd,
-                                tag.adkd(),
-                                gst_tags,
-                                svn
-                            );
-                        } else {
-                            log::error!(
-                                "E{:02} {:?} at {:?} tag wrong (auth by E{:02})",
-                                prnd,
-                                tag.adkd(),
-                                gst_tags,
-                                svn
-                            );
-                        }
+                        );
                     }
                 }
             }
@@ -263,33 +255,57 @@ impl OsnmaData {
                         .navmessage
                         .ced_and_status(prnd.into(), gst_navmessage.add_seconds(-300))
                     {
-                        if current_key.validate_tag(
+                        Self::validate_tag(
+                            &current_key,
                             tag.tag(),
+                            tag.adkd(),
                             gst_tag_slowmac,
                             prnd,
                             svn_u8,
-                            (j + 1).try_into().unwrap(),
+                            j,
                             navdata,
-                        ) {
-                            log::info!(
-                                "E{:02} {:?} at {:?} tag correct (auth by E{:02})",
-                                prnd,
-                                tag.adkd(),
-                                gst_tag_slowmac,
-                                svn
-                            );
-                        } else {
-                            log::error!(
-                                "E{:02} {:?} at {:?} tag wrong (auth by E{:02})",
-                                prnd,
-                                tag.adkd(),
-                                gst_tag_slowmac,
-                                svn
-                            );
-                        }
+                        );
                     }
                 }
             }
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn validate_tag(
+        key: &Key<Validated>,
+        tag: &BitSlice,
+        adkd: Adkd,
+        gst_tag: Gst,
+        prnd: u8,
+        prna: u8,
+        tag_idx: usize,
+        navdata: &BitSlice,
+    ) -> bool {
+        let ctr = (tag_idx + 1).try_into().unwrap();
+        let ret = match tag_idx {
+            0 => key.validate_tag0(tag, gst_tag, prna, navdata),
+            _ => key.validate_tag(tag, gst_tag, prnd, prna, ctr, navdata),
+        };
+        if ret {
+            log::info!(
+                "E{:02} {:?} at {:?} tag{} correct (auth by E{:02})",
+                prnd,
+                adkd,
+                gst_tag,
+                tag_idx,
+                prna
+            );
+        } else {
+            log::error!(
+                "E{:02} {:?} at {:?} tag{} wrong (auth by E{:02})",
+                prnd,
+                adkd,
+                gst_tag,
+                tag_idx,
+                prna
+            );
+        }
+        ret
     }
 }
