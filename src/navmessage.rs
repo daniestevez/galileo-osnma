@@ -78,7 +78,7 @@ impl CollectNavMessage {
     pub fn timing_parameters(&self, gst: Gst) -> Option<&BitSlice> {
         let item = &self.timing_parameters[self.find_gst(gst)?];
         if item.all_valid() {
-            Some(&item.bits()[..372])
+            Some(&item.bits()[..161])
         } else {
             None
         }
