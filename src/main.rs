@@ -1,6 +1,7 @@
 #[cfg(all(feature = "galmon", feature = "pem"))]
 use galileo_osnma::{
     galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport},
+    gst::Wn,
     Gst, Osnma,
 };
 
@@ -41,7 +42,12 @@ fn main() -> std::io::Result<()> {
             },
         ) = &packet.gi
         {
-            let gst = Gst::new(inav.gnss_wn.try_into().unwrap(), inav.gnss_tow);
+            // This is needed because sometimes we can see a TOW of 604801
+            let secs_in_week = 604800;
+            let tow = inav.gnss_tow % secs_in_week;
+            let wn = Wn::try_from(inav.gnss_wn).unwrap()
+                + Wn::try_from(inav.gnss_tow / secs_in_week).unwrap();
+            let gst = Gst::new(wn, tow);
             let svn = usize::try_from(inav.gnss_sv).unwrap();
 
             osnma.feed_inav(inav_word[..].try_into().unwrap(), svn, gst);
