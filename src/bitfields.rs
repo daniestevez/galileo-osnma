@@ -406,6 +406,17 @@ pub enum Prnd {
     Reserved,
 }
 
+impl TryFrom<Prnd> for u8 {
+    type Error = ();
+    fn try_from(value: Prnd) -> Result<u8, ()> {
+        match value {
+            Prnd::GalileoSvid(svid) => Ok(svid),
+            Prnd::GalileoConstellation => Ok(255),
+            Prnd::Reserved => Err(()),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Adkd {
     InavCed,

@@ -1,4 +1,4 @@
-use crate::bitfields::{DsmHeader, DsmKroot, Mack, NmaHeader};
+use crate::bitfields::{Adkd, DsmHeader, DsmKroot, Mack, NmaHeader};
 use crate::dsm::CollectDsm;
 use crate::gst::Gst;
 use crate::mack::MackStorage;
@@ -164,21 +164,130 @@ impl OsnmaData {
         let gst_tags = current_key.gst_subframe().add_seconds(-30);
         let gst_navmessage = gst_tags.add_seconds(-30);
         for svn in 1..=NUM_SVNS {
-            if let (Some(mack), Some(adkd0)) = (
-                self.mack.get(svn, gst_tags).map(|m| {
-                    Mack::new(
-                        m,
-                        current_key.chain().key_size_bits(),
-                        current_key.chain().tag_size_bits(),
-                    )
-                }),
-                self.navmessage.ced_and_status(svn, gst_navmessage),
-            ) {
-                let svn_u8 = u8::try_from(svn).unwrap();
-                if current_key.validate_tag0(mack.tag0(), gst_tags, svn_u8, adkd0) {
-                    log::info!("E{:02} {:?} tag0 correct", svn, gst_tags);
-                } else {
-                    log::error!("E{:02} {:?} tag0 wrong", svn, gst_tags);
+            let svn_u8 = u8::try_from(svn).unwrap();
+            if let Some(mack) = self.mack.get(svn, gst_tags) {
+                let mack = Mack::new(
+                    mack,
+                    current_key.chain().key_size_bits(),
+                    current_key.chain().tag_size_bits(),
+                );
+                // Try to validate tag0
+                if let Some(adkd0) = self.navmessage.ced_and_status(svn, gst_navmessage) {
+                    if current_key.validate_tag0(mack.tag0(), gst_tags, svn_u8, adkd0) {
+                        log::info!("E{:02} {:?} tag0 correct", svn, gst_tags);
+                    } else {
+                        log::error!("E{:02} {:?} tag0 wrong", svn, gst_tags);
+                    }
+                }
+                // Try to validate InavCed and InavTiming tags
+                for j in 1..mack.num_tags() {
+                    let tag = mack.tag_and_info(j);
+                    let prnd = match u8::try_from(tag.prnd()) {
+                        Ok(p) => p,
+                        Err(_) => {
+                            log::error!("could not obtain PRND from tag {:?}", tag);
+                            continue;
+                        }
+                    };
+                    if let Some(navdata) = match tag.adkd() {
+                        Adkd::InavCed => {
+                            self.navmessage.ced_and_status(prnd.into(), gst_navmessage)
+                        }
+                        Adkd::InavTiming => self.navmessage.timing_parameters(gst_navmessage),
+                        Adkd::SlowMac => {
+                            // Slow MAC is not processed here, because the key doesn't
+                            // have the appropriate extra delay
+                            None
+                        }
+                        Adkd::Reserved => {
+                            log::error!("reserved ADKD in tag {:?}", tag);
+                            None
+                        }
+                    } {
+                        let prnd = if tag.adkd() == Adkd::InavTiming {
+                            svn_u8
+                        } else {
+                            prnd
+                        };
+                        if current_key.validate_tag(
+                            tag.tag(),
+                            gst_tags,
+                            prnd,
+                            svn_u8,
+                            (j + 1).try_into().unwrap(),
+                            navdata,
+                        ) {
+                            log::info!(
+                                "E{:02} {:?} at {:?} tag correct (auth by E{:02})",
+                                prnd,
+                                tag.adkd(),
+                                gst_tags,
+                                svn
+                            );
+                        } else {
+                            log::error!(
+                                "E{:02} {:?} at {:?} tag wrong (auth by E{:02})",
+                                prnd,
+                                tag.adkd(),
+                                gst_tags,
+                                svn
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Try to validate Slow MAC
+            // This needs fetching a tag which is 300 seconds older than for
+            // the other ADKDs
+            let gst_tag_slowmac = gst_tags.add_seconds(-300);
+            if let Some(mack) = self.mack.get(svn, gst_tag_slowmac) {
+                let mack = Mack::new(
+                    mack,
+                    current_key.chain().key_size_bits(),
+                    current_key.chain().tag_size_bits(),
+                );
+                for j in 1..mack.num_tags() {
+                    let tag = mack.tag_and_info(j);
+                    if tag.adkd() != Adkd::SlowMac {
+                        continue;
+                    }
+                    let prnd = match u8::try_from(tag.prnd()) {
+                        Ok(p) => p,
+                        Err(_) => {
+                            log::error!("could not obtain PRND from tag {:?}", tag);
+                            continue;
+                        }
+                    };
+                    if let Some(navdata) = self
+                        .navmessage
+                        .ced_and_status(prnd.into(), gst_navmessage.add_seconds(-300))
+                    {
+                        if current_key.validate_tag(
+                            tag.tag(),
+                            gst_tag_slowmac,
+                            prnd,
+                            svn_u8,
+                            (j + 1).try_into().unwrap(),
+                            navdata,
+                        ) {
+                            log::info!(
+                                "E{:02} {:?} at {:?} tag correct (auth by E{:02})",
+                                prnd,
+                                tag.adkd(),
+                                gst_tag_slowmac,
+                                svn
+                            );
+                        } else {
+                            log::error!(
+                                "E{:02} {:?} at {:?} tag wrong (auth by E{:02})",
+                                prnd,
+                                tag.adkd(),
+                                gst_tag_slowmac,
+                                svn
+                            );
+                        }
+                    }
                 }
             }
         }
