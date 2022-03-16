@@ -30,30 +30,24 @@ impl CollectSubframe {
     pub fn feed(
         &mut self,
         osnma_data: &OsnmaDataMessage,
-        wn: Wn,
-        tow: Tow,
         svn: usize,
+        gst: Gst,
     ) -> Option<(&HkrootMessage, &MackMessage, Gst)> {
         let hkroot_section: HkrootSection = osnma_data[..HKROOT_SECTION_BYTES].try_into().unwrap();
         let mack_section: MackSection = osnma_data[HKROOT_SECTION_BYTES..].try_into().unwrap();
-        let word_num = (tow / 2) % Tow::from(WORDS_PER_SUBFRAME);
+        let word_num = (gst.tow() / 2) % Tow::from(WORDS_PER_SUBFRAME);
         log::trace!(
-            "feeding hkroot = {:02x?}, mack = {:02x?} for svn = E{:02} (wn = {}, tow = {}, word number = {})",
+            "feeding hkroot = {:02x?}, mack = {:02x?} for svn = E{:02} (GST = {:?}, word number = {})",
             hkroot_section,
             mack_section,
             svn,
-            wn,
-            tow,
+            gst,
             word_num
         );
-        let subframe = tow / SECONDS_PER_SUBFRAME;
-        if wn != self.wn || subframe != self.subframe {
-            log::info!(
-                "starting collection of new subframe (wn = {}, tow = {})",
-                wn,
-                tow
-            );
-            self.wn = wn;
+        let subframe = gst.tow() / SECONDS_PER_SUBFRAME;
+        if gst.wn() != self.wn || subframe != self.subframe {
+            log::info!("starting collection of new subframe (GST {:?})", gst);
+            self.wn = gst.wn();
             self.subframe = subframe;
             for s in 0..NUM_SVNS {
                 self.num_valid[s] = 0;
@@ -62,11 +56,10 @@ impl CollectSubframe {
         let svn_idx = svn - 1;
         if word_num != u32::from(self.num_valid[svn_idx]) {
             log::trace!(
-                "there are missing words for svn = E{:02} (wn = {}, tow = {}), \
+                "there are missing words for svn = E{:02} (GST {:?}), \
                  word number = {}, valid words = {}",
                 svn,
-                wn,
-                tow,
+                gst,
                 word_num,
                 self.num_valid[svn_idx]
             );
@@ -81,11 +74,10 @@ impl CollectSubframe {
         self.num_valid[svn_idx] += 1;
         if self.num_valid[svn_idx] == WORDS_PER_SUBFRAME {
             log::trace!(
-                "completed collection for svn = E{:02} (wn = {}, tow = {})\n\
+                "completed collection for svn = E{:02} (GST {:?})\n\
                  hkroot = {:02x?}\nmack = {:02x?}",
                 svn,
-                wn,
-                tow,
+                gst,
                 self.hkroot[svn_idx],
                 self.mack[svn_idx],
             );
@@ -133,7 +125,7 @@ mod test {
         for tow in (tow0..tow1).step_by(2) {
             let mut data = [counter; N];
             data[0] ^= 0xff;
-            assert!(collector.feed(&data, wn, tow, svn).is_none());
+            assert!(collector.feed(&data, svn, Gst::new(wn, tow)).is_none());
             counter += 1;
         }
         let counter0 = counter;
@@ -142,7 +134,7 @@ mod test {
         for tow in (tow1..tow2).step_by(2) {
             let mut data = [counter; N];
             data[0] ^= 0xff;
-            let ret = collector.feed(&data, wn, tow, svn);
+            let ret = collector.feed(&data, svn, Gst::new(wn, tow));
             counter += 1;
             if tow != tow2 - 2 {
                 assert!(ret.is_none())

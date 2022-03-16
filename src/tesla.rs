@@ -1,7 +1,10 @@
 use crate::bitfields::{self, DsmKroot, NmaHeader, NmaStatus};
 use crate::gst::{Gst, Tow};
 use crate::types::{BitSlice, NotValidated, Validated};
+use aes::Aes128;
 use bitvec::prelude::*;
+use cmac::Cmac;
+use crypto_common::KeyInit;
 use hmac::{Hmac, Mac};
 use p256::ecdsa::VerifyingKey;
 use sha2::{Digest, Sha256};
@@ -288,6 +291,24 @@ impl Key<Validated> {
         }
     }
 
+    pub fn validate_tag(
+        &self,
+        tag: &BitSlice,
+        tag_gst: Gst,
+        prnd: u8,
+        prna: u8,
+        ctr: u8,
+        navdata: &BitSlice,
+    ) -> bool {
+        // The buffer needs to be 1 byte larger than for tag0,
+        // in order to fit PRN_D
+        const BUFF_SIZE: usize = 76;
+        let mut buffer = [0u8; BUFF_SIZE];
+        buffer[0] = prnd;
+        let num_bytes = self.fill_common_tag_message(&mut buffer[1..], tag_gst, prna, ctr, navdata);
+        self.check_tag(&buffer[..num_bytes], tag)
+    }
+
     pub fn validate_tag0(
         &self,
         tag0: &BitSlice,
@@ -299,11 +320,23 @@ impl Key<Validated> {
         // (which have the largest navdata)
         const BUFF_SIZE: usize = 75;
         let mut buffer = [0u8; BUFF_SIZE];
+        let num_bytes = self.fill_common_tag_message(&mut buffer, tag_gst, prna, 1, navdata);
+        self.check_tag(&buffer[..num_bytes], tag0)
+    }
+
+    fn fill_common_tag_message(
+        &self,
+        buffer: &mut [u8],
+        gst: Gst,
+        prna: u8,
+        ctr: u8,
+        navdata: &BitSlice,
+    ) -> usize {
         buffer[0] = prna;
         let gst_bits = BitSlice::from_slice_mut(&mut buffer[1..5]);
-        gst_bits[0..12].store_be(tag_gst.wn());
-        gst_bits[12..32].store_be(tag_gst.tow());
-        buffer[5] = 1; // CTR field
+        gst_bits[0..12].store_be(gst.wn());
+        gst_bits[12..32].store_be(gst.tow());
+        buffer[5] = ctr;
         let remaining_bits = BitSlice::from_slice_mut(&mut buffer[6..]);
         remaining_bits[..2].store_be(match self.chain.status {
             ChainStatus::Test => 1,
@@ -311,18 +344,23 @@ impl Key<Validated> {
         });
         remaining_bits[2..2 + navdata.len()].copy_from_bitslice(navdata);
         let num_bytes = 6 + (2 + navdata.len() + 7) / 8;
+        num_bytes
+    }
 
+    fn check_tag(&self, message: &[u8], tag: &BitSlice) -> bool {
         match self.chain.mac_function {
-            MacFunction::HmacSha256 => {
-                let key = &self.data[..self.chain.key_size_bytes];
-                let mut hash = Hmac::<Sha256>::new_from_slice(key).unwrap();
-                hash.update(&buffer[..num_bytes]);
-                let hash = hash.finalize().into_bytes();
-                let computed = BitSlice::from_slice(&hash);
-                computed[..tag0.len()] == tag0
-            }
-            MacFunction::CmacAes => todo!(),
+            MacFunction::HmacSha256 => self.check_tag_mac::<Hmac<Sha256>>(message, tag),
+            MacFunction::CmacAes => self.check_tag_mac::<Cmac<Aes128>>(message, tag),
         }
+    }
+
+    fn check_tag_mac<M: Mac + KeyInit>(&self, message: &[u8], tag: &BitSlice) -> bool {
+        let key = &self.data[..self.chain.key_size_bytes];
+        let mut mac = <M as Mac>::new_from_slice(key).unwrap();
+        mac.update(message);
+        let mac = mac.finalize().into_bytes();
+        let computed = &BitSlice::from_slice(&mac)[..tag.len()];
+        computed == tag
     }
 }
 
