@@ -41,7 +41,7 @@ impl CollectNavMessage {
         self.adjust_write_pointer(gst);
         let svn_idx = svn - 1;
         self.ced_and_status[self.write_pointer][svn_idx].feed(word);
-        self.timing_parameters[self.write_pointer].feed(word);
+        self.timing_parameters[self.write_pointer].feed(word, svn);
     }
 
     fn adjust_write_pointer(&mut self, gst: Gst) {
@@ -62,6 +62,7 @@ impl CollectNavMessage {
                 );
                 let new_pointer = (self.write_pointer + 1) % DEPTH;
                 self.ced_and_status[new_pointer] = self.ced_and_status[self.write_pointer];
+                self.timing_parameters[new_pointer].valid = [false; TIMING_PARAMETERS_WORDS];
                 self.write_pointer = new_pointer;
                 self.mark_stale();
             }
@@ -257,21 +258,29 @@ impl CedAndStatus {
 }
 
 impl TimingParameters {
-    fn feed(&mut self, word: &InavWord) {
+    fn feed(&mut self, word: &InavWord, svn: usize) {
         let word = BitSlice::from_slice(word);
         let word_type = word[..6].load_be::<u8>();
         match word_type {
             6 => {
-                Self::log_word(word_type);
-                // Note that the TOW field will be removed in a new version
-                // of the ICD, so this will need to be updated.
-                self.bits_as_mut()[..119].copy_from_bitslice(&word[6..125]);
-                self.valid[0] = true;
+                if !self.valid[0] {
+                    Self::log_word(word_type);
+                    // Note that the TOW field will be removed in a new version
+                    // of the ICD, so this will need to be updated.
+                    self.bits_as_mut()[..119].copy_from_bitslice(&word[6..125]);
+                    self.valid[0] = true;
+                } else {
+                    Self::check_mismatch(word_type, svn, &self.bits()[..119], &word[6..125]);
+                }
             }
             10 => {
-                Self::log_word(word_type);
-                self.bits_as_mut()[119..161].copy_from_bitslice(&word[86..128]);
-                self.valid[1] = true;
+                if !self.valid[1] {
+                    Self::log_word(word_type);
+                    self.bits_as_mut()[119..161].copy_from_bitslice(&word[86..128]);
+                    self.valid[1] = true;
+                } else {
+                    Self::check_mismatch(word_type, svn, &self.bits()[119..161], &word[86..128]);
+                }
             }
             _ => (),
         }
@@ -283,5 +292,18 @@ impl TimingParameters {
 
     fn log_word(word_type: u8) {
         log::trace!("TimingParameters storing INAV word type {}", word_type);
+    }
+
+    fn check_mismatch(word_type: u8, svn: usize, stored: &BitSlice, received: &BitSlice) {
+        if stored != received {
+            log::warn!(
+                "received word {} from E{:02} doesn't match word stored for the same subframe\
+                        (received = {:?}, stored = {:?}",
+                word_type,
+                svn,
+                received,
+                stored
+            );
+        }
     }
 }
