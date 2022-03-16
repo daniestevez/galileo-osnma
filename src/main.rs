@@ -7,6 +7,8 @@ use galileo_osnma::galmon::navmon::nav_mon_message::GalileoInav;
 #[cfg(all(feature = "galmon", feature = "pem"))]
 use galileo_osnma::galmon::transport::ReadTransport;
 #[cfg(all(feature = "galmon", feature = "pem"))]
+use galileo_osnma::gst::Gst;
+#[cfg(all(feature = "galmon", feature = "pem"))]
 use galileo_osnma::mack::MackStorage;
 #[cfg(all(feature = "galmon", feature = "pem"))]
 use galileo_osnma::navmessage::CollectNavMessage;
@@ -57,9 +59,11 @@ fn main() -> std::io::Result<()> {
             },
         ) = &packet.gi
         {
+            let gst = Gst::new(inav.gnss_wn.try_into().unwrap(), inav.gnss_tow);
             navmessage.feed(
                 inav_word[..].try_into().unwrap(),
                 inav.gnss_sv.try_into().unwrap(),
+                gst,
             );
             if osnma.iter().all(|&x| x == 0) {
                 // no OSNMA data in this word
@@ -115,8 +119,8 @@ fn main() -> std::io::Result<()> {
                             ),
                         }
                     }
-                    if let Some(navdata) =
-                        navmessage.ced_and_status(inav.gnss_sv.try_into().unwrap())
+                    if let Some(navdata) = navmessage
+                        .ced_and_status(inav.gnss_sv.try_into().unwrap(), gst.add_seconds(-60))
                     {
                         let previous_gst = gst.add_seconds(-30);
                         if let Some(previous_mack) =

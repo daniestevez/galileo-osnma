@@ -1,4 +1,5 @@
-use crate::types::{BitSlice, MackMessage, Towh, Wn, MACK_MESSAGE_BYTES};
+use crate::gst::{Towh, Wn};
+use crate::types::{BitSlice, MackMessage, MACK_MESSAGE_BYTES};
 use bitvec::prelude::*;
 use core::fmt;
 use p256::ecdsa::{

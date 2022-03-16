@@ -1,4 +1,5 @@
-use crate::types::{Gst, MackMessage, NUM_SVNS};
+use crate::gst::Gst;
+use crate::types::{MackMessage, NUM_SVNS};
 
 // Number of subframes to store.
 // This is 12 because we need to store the current subframe,

@@ -4,6 +4,7 @@ pub mod bitfields;
 pub mod dsm;
 #[cfg(feature = "galmon")]
 pub mod galmon;
+pub mod gst;
 pub mod mack;
 pub mod navmessage;
 pub mod subframe;

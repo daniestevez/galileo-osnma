@@ -1,6 +1,7 @@
+use crate::gst::{Gst, Tow, Wn};
 use crate::types::{
-    Gst, HkrootMessage, HkrootSection, MackMessage, MackSection, OsnmaDataMessage, Tow, Wn,
-    HKROOT_MESSAGE_BYTES, HKROOT_SECTION_BYTES, MACK_MESSAGE_BYTES, MACK_SECTION_BYTES, NUM_SVNS,
+    HkrootMessage, HkrootSection, MackMessage, MackSection, OsnmaDataMessage, HKROOT_MESSAGE_BYTES,
+    HKROOT_SECTION_BYTES, MACK_MESSAGE_BYTES, MACK_SECTION_BYTES, NUM_SVNS,
 };
 
 const WORDS_PER_SUBFRAME: u8 = 15;
@@ -91,10 +92,7 @@ impl CollectSubframe {
             Some((
                 &self.hkroot[svn_idx],
                 &self.mack[svn_idx],
-                Gst {
-                    wn: self.wn,
-                    tow: self.subframe * SECONDS_PER_SUBFRAME,
-                },
+                Gst::new(self.wn, self.subframe * SECONDS_PER_SUBFRAME),
             ))
         } else {
             None
@@ -158,7 +156,7 @@ mod test {
                 }
                 let expected_hkroot: HkrootMessage = expected_hkroot[..].try_into().unwrap();
                 let expected_mack: MackMessage = expected_mack[..].try_into().unwrap();
-                let expected = Some((&expected_hkroot, &expected_mack, Gst { wn, tow: tow1 }));
+                let expected = Some((&expected_hkroot, &expected_mack, Gst::new(wn, tow1)));
                 assert_eq!(ret, expected);
             }
         }

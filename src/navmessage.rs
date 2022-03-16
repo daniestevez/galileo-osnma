@@ -1,17 +1,27 @@
+use crate::gst::Gst;
 use crate::types::{BitSlice, InavWord, NUM_SVNS};
 use bitvec::prelude::*;
 
+// Number of subframes to store.
+// This should usually be 1 more than the DEPTH of the MackStorage, because tags
+// in the MACK refer to the previous subframe.
+const DEPTH: usize = 13;
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct CollectNavMessage {
-    ced_and_status: [CedAndStatus; NUM_SVNS],
-    timing_parameters: TimingParameters,
+    ced_and_status: [[CedAndStatus; NUM_SVNS]; DEPTH],
+    timing_parameters: [TimingParameters; DEPTH],
+    gsts: [Option<Gst>; DEPTH],
+    write_pointer: usize,
 }
 
 impl CollectNavMessage {
     pub fn new() -> CollectNavMessage {
         CollectNavMessage {
-            ced_and_status: [CedAndStatus::new(); NUM_SVNS],
-            timing_parameters: TimingParameters::new(),
+            ced_and_status: [[CedAndStatus::new(); NUM_SVNS]; DEPTH],
+            timing_parameters: [TimingParameters::new(); DEPTH],
+            gsts: [None; DEPTH],
+            write_pointer: 0,
         }
     }
 
@@ -19,17 +29,45 @@ impl CollectNavMessage {
         assert!((1..=NUM_SVNS).contains(&svn));
     }
 
-    pub fn feed(&mut self, word: &InavWord, svn: usize) {
-        log::trace!("feeding INAV word = {:02x?} for svn = E{:02}", word, svn);
+    pub fn feed(&mut self, word: &InavWord, svn: usize, gst: Gst) {
+        log::trace!(
+            "feeding INAV word = {:02x?} for svn = E{:02} GST {:?}",
+            word,
+            svn,
+            gst
+        );
         Self::check_svn(svn);
+        let gst = gst.gst_subframe();
+        self.adjust_write_pointer(gst);
         let svn_idx = svn - 1;
-        self.ced_and_status[svn_idx].feed(word);
-        self.timing_parameters.feed(word);
+        self.ced_and_status[self.write_pointer][svn_idx].feed(word);
+        self.timing_parameters[self.write_pointer].feed(word);
     }
 
-    pub fn ced_and_status(&self, svn: usize) -> Option<&BitSlice> {
+    fn adjust_write_pointer(&mut self, gst: Gst) {
+        // If write pointer points to a valid GST which is distinct
+        // from the current, we advance the write pointer and copy
+        // the old message to the new write pointer location.
+        if let Some(g) = self.gsts[self.write_pointer] {
+            if g != gst {
+                log::trace!(
+                    "got a new GST {:?} (current GST is {:?}); \
+                             advancing write pointer",
+                    gst,
+                    g
+                );
+                let new_pointer = (self.write_pointer + 1) % DEPTH;
+                self.ced_and_status[new_pointer] = self.ced_and_status[self.write_pointer];
+                self.timing_parameters[new_pointer] = self.timing_parameters[self.write_pointer];
+                self.write_pointer = new_pointer;
+            }
+        }
+        self.gsts[self.write_pointer] = Some(gst);
+    }
+
+    pub fn ced_and_status(&self, svn: usize, gst: Gst) -> Option<&BitSlice> {
         Self::check_svn(svn);
-        let item = &self.ced_and_status[svn - 1];
+        let item = &self.ced_and_status[self.find_gst(gst)?][svn - 1];
         if item.all_valid() {
             Some(&item.bits()[..549])
         } else {
@@ -37,12 +75,21 @@ impl CollectNavMessage {
         }
     }
 
-    pub fn timing_parameters(&self) -> Option<&BitSlice> {
-        if self.timing_parameters.all_valid() {
-            Some(&self.timing_parameters.bits()[..372])
+    pub fn timing_parameters(&self, gst: Gst) -> Option<&BitSlice> {
+        let item = &self.timing_parameters[self.find_gst(gst)?];
+        if item.all_valid() {
+            Some(&item.bits()[..372])
         } else {
             None
         }
+    }
+
+    fn find_gst(&self, gst: Gst) -> Option<usize> {
+        assert!(gst.is_subframe());
+        self.gsts
+            .iter()
+            .enumerate()
+            .find_map(|(j, &g)| if g == Some(gst) { Some(j) } else { None })
     }
 }
 

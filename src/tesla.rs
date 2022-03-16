@@ -1,5 +1,6 @@
 use crate::bitfields::{self, DsmKroot, NmaHeader, NmaStatus};
-use crate::types::{BitSlice, Gst, NotValidated, Tow, Validated};
+use crate::gst::{Gst, Tow};
+use crate::types::{BitSlice, NotValidated, Validated};
 use bitvec::prelude::*;
 use hmac::{Hmac, Mac};
 use p256::ecdsa::VerifyingKey;
@@ -142,7 +143,7 @@ impl<V> Key<V> {
     }
 
     fn check_gst(gst: Gst) {
-        assert!(gst.tow % 30 == 0);
+        assert!(gst.is_subframe());
     }
 
     pub fn chain(&self) -> &Chain {
@@ -203,7 +204,9 @@ impl Key<Validated> {
         }
         let wn = dsm_kroot.kroot_wn();
         let tow = Tow::from(dsm_kroot.kroot_towh()) * 3600;
-        let gst = Gst { wn, tow }.add_seconds(-30);
+        let gst = Gst::new(wn, tow);
+        Self::check_gst(gst);
+        let gst = gst.add_seconds(-30);
         Ok(Key::from_slice(dsm_kroot.kroot(), gst, &chain).force_valid())
     }
 }
@@ -223,8 +226,8 @@ impl<V: Clone> Key<V> {
         buffer[..size].copy_from_slice(&self.data[..size]);
         let previous_subframe = self.gst_subframe.add_seconds(-30);
         let gst_bits = BitSlice::from_slice_mut(&mut buffer[size..size + 4]);
-        gst_bits[0..12].store_be(previous_subframe.wn);
-        gst_bits[12..32].store_be(previous_subframe.tow);
+        gst_bits[0..12].store_be(previous_subframe.wn());
+        gst_bits[12..32].store_be(previous_subframe.tow());
         buffer[size + 4..size + 10].copy_from_slice(&self.chain.alpha.to_be_bytes()[2..]);
         let mut new_key = [0; MAX_KEY_BYTES];
         match self.chain.hash_function {
@@ -258,16 +261,13 @@ impl Key<Validated> {
         if self.chain != other.chain {
             return Err(ValidationError::DifferentChain);
         }
-        if self.gst_subframe.wn > other.gst_subframe.wn
-            || (self.gst_subframe.tow == other.gst_subframe.tow
-                && self.gst_subframe.tow >= other.gst_subframe.tow)
-        {
+        if self.gst_subframe >= other.gst_subframe {
             return Err(ValidationError::DoesNotFollow);
         }
-        let derivations = i32::from(other.gst_subframe.wn - self.gst_subframe.wn)
+        let derivations = i32::from(other.gst_subframe.wn() - self.gst_subframe.wn())
             * (7 * 24 * 3600 / 30)
-            + (i32::try_from(other.gst_subframe.tow).unwrap()
-                - i32::try_from(self.gst_subframe.tow).unwrap())
+            + (i32::try_from(other.gst_subframe.tow()).unwrap()
+                - i32::try_from(self.gst_subframe.tow()).unwrap())
                 / 30;
         assert!(derivations >= 1);
         // Set an arbitrary limit to the number of derivations.
@@ -301,8 +301,8 @@ impl Key<Validated> {
         let mut buffer = [0u8; BUFF_SIZE];
         buffer[0] = prna;
         let gst_bits = BitSlice::from_slice_mut(&mut buffer[1..5]);
-        gst_bits[0..12].store_be(tag_gst.wn);
-        gst_bits[12..32].store_be(tag_gst.tow);
+        gst_bits[0..12].store_be(tag_gst.wn());
+        gst_bits[12..32].store_be(tag_gst.tow());
         buffer[5] = 1; // CTR field
         let remaining_bits = BitSlice::from_slice_mut(&mut buffer[6..]);
         remaining_bits[..2].store_be(match self.chain.status {
@@ -350,18 +350,12 @@ mod test {
         let chain = test_chain();
         let k0 = Key::from_slice(
             &hex!("42 b4 19 da 6a da 1c 0a 3d 6f 56 a5 e5 dc 59 a7"),
-            Gst {
-                wn: 1176,
-                tow: 120930,
-            },
+            Gst::new(1176, 120930),
             &chain,
         );
         let k1 = Key::from_slice(
             &hex!("95 42 aa d4 7a bf 39 ba fe 56 68 61 af e8 80 b2"),
-            Gst {
-                wn: 1176,
-                tow: 120960,
-            },
+            Gst::new(1176, 120960),
             &chain,
         );
         assert_eq!(k1.one_way_function(), k0);
@@ -373,20 +367,14 @@ mod test {
         let chain = test_chain();
         let kroot = Key::from_slice(
             &hex!("84 1e 1d e4 d4 58 c0 e9 84 24 76 e0 04 66 6c f3"),
-            Gst {
-                wn: 1176,
-                tow: 0x21 * 3600 - 30, // towh in DSM-KROOT was 0x21
-            },
+            Gst::new(1176, 0x21 * 3600 - 30), // towh in DSM-KROOT was 0x21
             &chain,
         );
         // Force KROOT to be valid manually
         let kroot = kroot.force_valid();
         let key = Key::from_slice(
             &hex!("42 b4 19 da 6a da 1c 0a 3d 6f 56 a5 e5 dc 59 a7"),
-            Gst {
-                wn: 1176,
-                tow: 120930,
-            },
+            Gst::new(1176, 120930),
             &chain,
         );
         assert!(kroot.validate_key(&key).is_ok());
@@ -396,18 +384,12 @@ mod test {
     fn tag0() {
         // Data corresponding to E21 on 2022-03-07 ~9:00 UTC
         let tag0 = BitSlice::from_slice(&hex!("8f 54 58 88 71"));
-        let tag0_gst = Gst {
-            wn: 1176,
-            tow: 121050,
-        };
+        let tag0_gst = Gst::new(1176, 121050);
         let prna = 21;
         let chain = test_chain();
         let key = Key::from_slice(
             &hex!("19 58 e7 76 6f b4 08 cb d6 a8 de fc e4 c7 d5 66"),
-            Gst {
-                wn: 1176,
-                tow: 121080,
-            },
+            Gst::new(1176, 121080),
             &chain,
         )
         .force_valid();
