@@ -47,28 +47,38 @@ impl CollectNavMessage {
     fn adjust_write_pointer(&mut self, gst: Gst) {
         // If write pointer points to a valid GST which is distinct
         // from the current, we advance the write pointer and copy
-        // the old message to the new write pointer location.
+        // the old CED and status to the new write pointer location.
+        // We mark the copy as stale.
+        // The timing parameters are not copied. Since all the satellites
+        // transmit this information, it is very likely that in this subframe
+        // we are able to gather the two required words.
         if let Some(g) = self.gsts[self.write_pointer] {
             if g != gst {
                 log::trace!(
                     "got a new GST {:?} (current GST is {:?}); \
-                             advancing write pointer",
+                     advancing write pointer",
                     gst,
                     g
                 );
                 let new_pointer = (self.write_pointer + 1) % DEPTH;
                 self.ced_and_status[new_pointer] = self.ced_and_status[self.write_pointer];
-                self.timing_parameters[new_pointer] = self.timing_parameters[self.write_pointer];
                 self.write_pointer = new_pointer;
+                self.mark_stale();
             }
         }
         self.gsts[self.write_pointer] = Some(gst);
     }
 
+    fn mark_stale(&mut self) {
+        for ced in self.ced_and_status[self.write_pointer].iter_mut() {
+            ced.stale = true;
+        }
+    }
+
     pub fn ced_and_status(&self, svn: usize, gst: Gst) -> Option<&BitSlice> {
         Self::check_svn(svn);
         let item = &self.ced_and_status[self.find_gst(gst)?][svn - 1];
-        if item.all_valid() {
+        if !item.stale && item.all_valid() {
             Some(&item.bits()[..549])
         } else {
             None
@@ -106,6 +116,7 @@ const CED_AND_STATUS_WORDS: usize = 5;
 struct CedAndStatus {
     data: [u8; CED_AND_STATUS_BYTES],
     valid: [bool; CED_AND_STATUS_WORDS],
+    stale: bool,
 }
 
 pub const TIMING_PARAMETERS_BYTES: usize = 21;
@@ -118,12 +129,13 @@ struct TimingParameters {
 }
 
 macro_rules! impl_common {
-    ($s: ident, $data_size: expr, $num_words: expr) => {
+    ($s: ident, $data_size: expr, $num_words: expr, $($id: ident <= $val: expr),*) => {
         impl $s {
             fn new() -> $s {
                 $s {
                     data: [0; $data_size],
                     valid: [false; $num_words],
+                    $($id: $val),*
                 }
             }
 
@@ -142,11 +154,16 @@ macro_rules! impl_common {
     };
 }
 
-impl_common!(CedAndStatus, CED_AND_STATUS_BYTES, CED_AND_STATUS_WORDS);
+impl_common!(
+    CedAndStatus,
+    CED_AND_STATUS_BYTES,
+    CED_AND_STATUS_WORDS,
+    stale <= true
+);
 impl_common!(
     TimingParameters,
     TIMING_PARAMETERS_BYTES,
-    TIMING_PARAMETERS_WORDS
+    TIMING_PARAMETERS_WORDS,
 );
 
 impl CedAndStatus {
@@ -160,30 +177,35 @@ impl CedAndStatus {
         match word_type {
             1 => {
                 self.bits_as_mut()[..120].copy_from_bitslice(&word[6..126]);
+                self.stale = false;
                 self.valid[0] = true;
                 self.new_iodnav(iodnav);
                 assert!(self.valid[0]);
             }
             2 => {
                 self.bits_as_mut()[120..240].copy_from_bitslice(&word[6..126]);
+                self.stale = false;
                 self.valid[1] = true;
                 self.new_iodnav(iodnav);
                 assert!(self.valid[1]);
             }
             3 => {
                 self.bits_as_mut()[240..362].copy_from_bitslice(&word[6..128]);
+                self.stale = false;
                 self.valid[2] = true;
                 self.new_iodnav(iodnav);
                 assert!(self.valid[2]);
             }
             4 => {
                 self.bits_as_mut()[362..482].copy_from_bitslice(&word[6..126]);
+                self.stale = false;
                 self.valid[3] = true;
                 self.new_iodnav(iodnav);
                 assert!(self.valid[3]);
             }
             5 => {
                 self.bits_as_mut()[482..549].copy_from_bitslice(&word[6..73]);
+                self.stale = false;
                 self.valid[4] = true;
             }
             _ => (),
