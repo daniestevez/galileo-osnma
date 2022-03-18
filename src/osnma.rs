@@ -172,6 +172,10 @@ impl OsnmaData {
                     current_key.chain().key_size_bits(),
                     current_key.chain().tag_size_bits(),
                 );
+                if !Self::validate_macseq(&current_key, mack, svn_u8, gst_tags) {
+                    // wrong MACSEQ
+                    continue;
+                }
                 // Try to validate tag0
                 if let Some(navdata) = self.navmessage.ced_and_status(svn, gst_navmessage) {
                     Self::validate_tag(
@@ -241,6 +245,12 @@ impl OsnmaData {
                     current_key.chain().key_size_bits(),
                     current_key.chain().tag_size_bits(),
                 );
+                // re-generate the key that was used for this MACK
+                let mack_key = current_key.derive(10);
+                if !Self::validate_macseq(&mack_key, mack, svn_u8, gst_tag_slowmac) {
+                    // wrong MACSEQ
+                    continue;
+                }
                 for j in 1..mack.num_tags() {
                     let tag = mack.tag_and_info(j);
                     if tag.adkd() != Adkd::SlowMac {
@@ -273,6 +283,14 @@ impl OsnmaData {
                 }
             }
         }
+    }
+
+    fn validate_macseq(key: &Key<Validated>, mack: Mack, prna: u8, gst_mack: Gst) -> bool {
+        let ret = key.check_macseq(mack, prna.into(), gst_mack);
+        if !ret {
+            log::error!("wrong MACSEQ for MACK {:?}", mack);
+        }
+        ret
     }
 
     fn validate_adkd(

@@ -1,4 +1,4 @@
-use crate::bitfields::{self, Adkd, DsmKroot, NmaHeader, NmaStatus, Prnd, TagAndInfo};
+use crate::bitfields::{self, Adkd, DsmKroot, Mack, NmaHeader, NmaStatus, Prnd, TagAndInfo};
 use crate::gst::{Gst, Tow};
 use crate::types::NUM_SVNS;
 use crate::types::{BitSlice, NotValidated, Validated};
@@ -224,6 +224,12 @@ impl<V> Key<V> {
     pub fn chain(&self) -> &Chain {
         &self.chain
     }
+
+    fn store_gst(buffer: &mut [u8], gst: Gst) {
+        let bits = BitSlice::from_slice_mut(buffer);
+        bits[0..12].store_be(gst.wn());
+        bits[12..32].store_be(gst.tow());
+    }
 }
 
 impl Key<NotValidated> {
@@ -300,9 +306,7 @@ impl<V: Clone> Key<V> {
         let size = self.chain.key_size_bytes;
         buffer[..size].copy_from_slice(&self.data[..size]);
         let previous_subframe = self.gst_subframe.add_seconds(-30);
-        let gst_bits = BitSlice::from_slice_mut(&mut buffer[size..size + 4]);
-        gst_bits[0..12].store_be(previous_subframe.wn());
-        gst_bits[12..32].store_be(previous_subframe.tow());
+        Self::store_gst(&mut buffer[size..size + 4], previous_subframe);
         buffer[size + 4..size + 10].copy_from_slice(&self.chain.alpha.to_be_bytes()[2..]);
         let mut new_key = [0; MAX_KEY_BYTES];
         match self.chain.hash_function {
@@ -325,6 +329,14 @@ impl<V: Clone> Key<V> {
             gst_subframe: previous_subframe,
             _validated: self._validated.clone(),
         }
+    }
+
+    pub fn derive(&self, num_derivations: usize) -> Key<V> {
+        let mut derived_key = self.clone();
+        for _ in 0..num_derivations {
+            derived_key = derived_key.one_way_function();
+        }
+        derived_key
     }
 }
 
@@ -350,10 +362,7 @@ impl Key<Validated> {
         if derivations > 3000 {
             return Err(ValidationError::TooManyDerivations);
         }
-        let mut derived_key = other.clone();
-        for _ in 0..derivations {
-            derived_key = derived_key.one_way_function();
-        }
+        let derived_key = other.derive(derivations.try_into().unwrap());
         assert!(derived_key.gst_subframe == self.gst_subframe);
         let size = self.chain.key_size_bytes;
         if derived_key.data[..size] == self.data[..size] {
@@ -406,9 +415,7 @@ impl Key<Validated> {
         navdata: &BitSlice,
     ) -> usize {
         buffer[0] = prna;
-        let gst_bits = BitSlice::from_slice_mut(&mut buffer[1..5]);
-        gst_bits[0..12].store_be(gst.wn());
-        gst_bits[12..32].store_be(gst.tow());
+        Self::store_gst(&mut buffer[1..5], gst);
         buffer[5] = ctr;
         let remaining_bits = BitSlice::from_slice_mut(&mut buffer[6..]);
         remaining_bits[..2].store_be(match self.chain.status {
@@ -433,6 +440,22 @@ impl Key<Validated> {
         let mac = mac.finalize().into_bytes();
         let computed = &BitSlice::from_slice(&mac)[..tag.len()];
         computed == tag
+    }
+
+    pub fn check_macseq(&self, mack: Mack, prna: usize, gst_mack: Gst) -> bool {
+        // No MACLTs with FLEX tags are defined currently, so FLEX
+        // tags are not taken into account. This will need to be
+        // updated when FLEX tags are added to the MACLTs.
+
+        // This is large enough if there are no FLEX tags
+        let mut buffer = [0u8; 5];
+        buffer[0] = prna.try_into().unwrap();
+        Self::store_gst(&mut buffer[1..5], gst_mack);
+        let num_bytes = 5;
+        let mut macseq_buffer = [0u8; 2];
+        let macseq_bits = &mut BitSlice::from_slice_mut(&mut macseq_buffer)[..12];
+        macseq_bits.store_be::<u16>(mack.macseq());
+        self.check_tag(&buffer[..num_bytes], macseq_bits)
     }
 }
 
