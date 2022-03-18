@@ -286,7 +286,7 @@ impl OsnmaData {
     }
 
     fn validate_macseq(key: &Key<Validated>, mack: Mack, prna: u8, gst_mack: Gst) -> bool {
-        let ret = key.check_macseq(mack, prna.into(), gst_mack);
+        let ret = key.validate_macseq(mack, prna.into(), gst_mack);
         if !ret {
             log::error!("wrong MACSEQ for MACK {:?}", mack);
         }
@@ -300,10 +300,13 @@ impl OsnmaData {
         prna: u8,
         tag_idx: usize,
     ) -> bool {
-        match key.chain().check_adkd(tag_idx, tag, prna.into(), gst_tag) {
+        match key
+            .chain()
+            .validate_adkd(tag_idx, tag, prna.into(), gst_tag)
+        {
             Ok(()) => true,
             Err(e) => {
-                log::error!("failed to check ADKD for tag {:?}: {:?}", tag, e);
+                log::error!("wrong ADKD for tag {:?}: {:?}", tag, e);
                 false
             }
         }

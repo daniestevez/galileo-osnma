@@ -118,7 +118,7 @@ impl Chain {
         self.alpha
     }
 
-    pub fn check_adkd(
+    pub fn validate_adkd(
         &self,
         num_tag: usize,
         tag: TagAndInfo,
@@ -443,7 +443,7 @@ impl Key<Validated> {
         computed == tag
     }
 
-    pub fn check_macseq(&self, mack: Mack, prna: usize, gst_mack: Gst) -> bool {
+    pub fn validate_macseq(&self, mack: Mack, prna: usize, gst_mack: Gst) -> bool {
         // No MACLTs with FLEX tags are defined currently, so FLEX
         // tags are not taken into account. This will need to be
         // updated when FLEX tags are added to the MACLTs.
@@ -569,7 +569,7 @@ mod test {
         let prna = 19;
         for j in 1..mack.num_tags() {
             assert!(test_chain()
-                .check_adkd(j, mack.tag_and_info(j), prna, Gst::new(1176, 121050))
+                .validate_adkd(j, mack.tag_and_info(j), prna, Gst::new(1176, 121050))
                 .is_ok());
         }
     }
@@ -579,6 +579,6 @@ mod test {
         let key = test_key().force_valid();
         let mack = test_mack();
         let prna = 19;
-        assert!(key.check_macseq(mack, prna, Gst::new(1176, 121050)));
+        assert!(key.validate_macseq(mack, prna, Gst::new(1176, 121050)));
     }
 }
