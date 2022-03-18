@@ -1,3 +1,4 @@
 /target
-Cargo.lock
+/galmon-osnma/target
+/Cargo.lock
 *~

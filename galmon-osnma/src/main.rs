@@ -1,18 +1,12 @@
-#[cfg(all(feature = "galmon", feature = "pem"))]
 use galileo_osnma::{
     galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport},
     gst::Wn,
     Gst, Osnma,
 };
-
-#[cfg(all(feature = "galmon", feature = "pem"))]
 use p256::ecdsa::VerifyingKey;
-#[cfg(all(feature = "galmon", feature = "pem"))]
 use spki::DecodePublicKey;
-#[cfg(all(feature = "galmon", feature = "pem"))]
 use std::io::Read;
 
-#[cfg(all(feature = "galmon", feature = "pem"))]
 fn load_pubkey(path: &str) -> std::io::Result<VerifyingKey> {
     let mut file = std::fs::File::open(path)?;
     let mut pem = String::new();
@@ -20,9 +14,7 @@ fn load_pubkey(path: &str) -> std::io::Result<VerifyingKey> {
     Ok(VerifyingKey::from_public_key_pem(&pem).expect("invalid pubkey"))
 }
 
-#[cfg(all(feature = "galmon", feature = "pem"))]
 fn main() -> std::io::Result<()> {
-    #[cfg(feature = "env_logger")]
     env_logger::init();
 
     let args: Vec<_> = std::env::args().collect();
@@ -57,6 +49,3 @@ fn main() -> std::io::Result<()> {
         }
     }
 }
-
-#[cfg(not(all(feature = "galmon", feature = "pem")))]
-fn main() {}
