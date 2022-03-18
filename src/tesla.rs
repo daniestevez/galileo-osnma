@@ -1,5 +1,6 @@
-use crate::bitfields::{self, DsmKroot, NmaHeader, NmaStatus};
+use crate::bitfields::{self, Adkd, DsmKroot, NmaHeader, NmaStatus, Prnd, TagAndInfo};
 use crate::gst::{Gst, Tow};
+use crate::types::NUM_SVNS;
 use crate::types::{BitSlice, NotValidated, Validated};
 use aes::Aes128;
 use bitvec::prelude::*;
@@ -116,12 +117,83 @@ impl Chain {
     pub fn alpha(&self) -> u64 {
         self.alpha
     }
+
+    pub fn check_adkd(
+        &self,
+        num_tag: usize,
+        tag: TagAndInfo,
+        prna: usize,
+        gst_tag: Gst,
+    ) -> Result<(), AdkdCheckError> {
+        assert!(num_tag >= 1);
+        // Half of the GST minute
+        let column = (gst_tag.tow() / 30) % 2;
+        assert!((column == 0) || (column == 1));
+        let (adkd, object) = match (self.maclt, column, num_tag) {
+            (27, 0, 1 | 2 | 3 | 5) => (Adkd::InavCed, AuthObject::Other),
+            (27, _, 4) => (Adkd::SlowMac, AuthObject::SelfAuth),
+            (27, 1, 1 | 2 | 5) => (Adkd::InavCed, AuthObject::Other),
+            (27, 1, 3) => (Adkd::InavTiming, AuthObject::SelfAuth),
+            (28, 0, 1 | 2 | 3 | 5 | 6 | 8 | 9) => (Adkd::InavCed, AuthObject::Other),
+            (28, 0, 4) => (Adkd::InavCed, AuthObject::SelfAuth),
+            (28, _, 7) => (Adkd::SlowMac, AuthObject::SelfAuth),
+            (28, 1, 1 | 2 | 4 | 5 | 8 | 9) => (Adkd::InavCed, AuthObject::Other),
+            (28, 1, 3) => (Adkd::InavCed, AuthObject::SelfAuth),
+            (28, 1, 6) => (Adkd::InavTiming, AuthObject::SelfAuth),
+            (31, 0, 1 | 2 | 4) => (Adkd::InavCed, AuthObject::Other),
+            (31, _, 3) => (Adkd::SlowMac, AuthObject::SelfAuth),
+            (31, 1, 1 | 2) => (Adkd::InavCed, AuthObject::Other),
+            (31, 1, 4) => (Adkd::InavTiming, AuthObject::SelfAuth),
+            (33, 0, 1 | 3 | 5) => (Adkd::InavCed, AuthObject::Other),
+            (33, 0, 2) => (Adkd::InavTiming, AuthObject::SelfAuth),
+            (33, 0, 4) => (Adkd::SlowMac, AuthObject::SelfAuth),
+            (33, 1, 1 | 2 | 4) => (Adkd::InavCed, AuthObject::Other),
+            (33, 1, 3) => (Adkd::SlowMac, AuthObject::SelfAuth),
+            (33, 1, 5) => (Adkd::SlowMac, AuthObject::Other),
+            (27 | 28 | 31 | 33, _, _) => return Err(AdkdCheckError::InvalidTagNumber),
+            (_, _, _) => return Err(AdkdCheckError::InvalidMaclt),
+        };
+        assert!((adkd != Adkd::InavTiming) || (object == AuthObject::SelfAuth));
+        if tag.adkd() != adkd {
+            Err(AdkdCheckError::WrongAdkd)
+        } else if adkd == Adkd::InavTiming {
+            if tag.prnd() != Prnd::GalileoConstellation {
+                Err(AdkdCheckError::WrongPrnd)
+            } else {
+                Ok(())
+            }
+        } else if let Prnd::GalileoSvid(prnd) = tag.prnd() {
+            if object == AuthObject::SelfAuth && prnd != prna.try_into().unwrap() {
+                Err(AdkdCheckError::WrongPrnd)
+            } else if (1..=NUM_SVNS).contains(&prnd.into()) {
+                Ok(())
+            } else {
+                Err(AdkdCheckError::WrongPrnd)
+            }
+        } else {
+            unreachable!()
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ChainError {
     ReservedField,
     NmaDontUse,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum AdkdCheckError {
+    InvalidTagNumber,
+    InvalidMaclt,
+    WrongAdkd,
+    WrongPrnd,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+enum AuthObject {
+    SelfAuth,
+    Other,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]

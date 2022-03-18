@@ -1,4 +1,4 @@
-use crate::bitfields::{Adkd, DsmHeader, DsmKroot, Mack, NmaHeader};
+use crate::bitfields::{Adkd, DsmHeader, DsmKroot, Mack, NmaHeader, TagAndInfo};
 use crate::dsm::CollectDsm;
 use crate::gst::Gst;
 use crate::mack::MackStorage;
@@ -215,16 +215,18 @@ impl OsnmaData {
                         } else {
                             prnd
                         };
-                        Self::validate_tag(
-                            &current_key,
-                            tag.tag(),
-                            tag.adkd(),
-                            gst_tags,
-                            prnd,
-                            svn_u8,
-                            j,
-                            navdata,
-                        );
+                        if Self::validate_adkd(&current_key, tag, gst_tags, svn_u8, j) {
+                            Self::validate_tag(
+                                &current_key,
+                                tag.tag(),
+                                tag.adkd(),
+                                gst_tags,
+                                prnd,
+                                svn_u8,
+                                j,
+                                navdata,
+                            );
+                        }
                     }
                 }
             }
@@ -255,18 +257,36 @@ impl OsnmaData {
                         .navmessage
                         .ced_and_status(prnd.into(), gst_navmessage.add_seconds(-300))
                     {
-                        Self::validate_tag(
-                            &current_key,
-                            tag.tag(),
-                            tag.adkd(),
-                            gst_tag_slowmac,
-                            prnd,
-                            svn_u8,
-                            j,
-                            navdata,
-                        );
+                        if Self::validate_adkd(&current_key, tag, gst_tag_slowmac, svn_u8, j) {
+                            Self::validate_tag(
+                                &current_key,
+                                tag.tag(),
+                                tag.adkd(),
+                                gst_tag_slowmac,
+                                prnd,
+                                svn_u8,
+                                j,
+                                navdata,
+                            );
+                        }
                     }
                 }
+            }
+        }
+    }
+
+    fn validate_adkd(
+        key: &Key<Validated>,
+        tag: TagAndInfo,
+        gst_tag: Gst,
+        prna: u8,
+        tag_idx: usize,
+    ) -> bool {
+        match key.chain().check_adkd(tag_idx, tag, prna.into(), gst_tag) {
+            Ok(()) => true,
+            Err(e) => {
+                log::error!("failed to check ADKD for tag {:?}: {:?}", tag, e);
+                false
             }
         }
     }
