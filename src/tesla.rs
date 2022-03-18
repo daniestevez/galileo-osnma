@@ -309,26 +309,27 @@ impl<V: Clone> Key<V> {
         Self::store_gst(&mut buffer[size..size + 4], previous_subframe);
         buffer[size + 4..size + 10].copy_from_slice(&self.chain.alpha.to_be_bytes()[2..]);
         let mut new_key = [0; MAX_KEY_BYTES];
-        match self.chain.hash_function {
-            HashFunction::Sha256 => {
-                let mut hash = Sha256::new();
-                hash.update(&buffer[..size + 10]);
-                let hash = hash.finalize();
-                new_key[..size].copy_from_slice(&hash[..size]);
-            }
-            HashFunction::Sha3_256 => {
-                let mut hash = Sha3_256::new();
-                hash.update(&buffer[..size + 10]);
-                let hash = hash.finalize();
-                new_key[..size].copy_from_slice(&hash[..size]);
-            }
-        };
+        self.hash_message(&buffer[..size + 10], &mut new_key[..size]);
         Key {
             data: new_key,
             chain: self.chain,
             gst_subframe: previous_subframe,
             _validated: self._validated.clone(),
         }
+    }
+
+    fn hash_message(&self, message: &[u8], hash_out: &mut [u8]) {
+        match self.chain.hash_function {
+            HashFunction::Sha256 => Self::hash_message_digest::<Sha256>(message, hash_out),
+            HashFunction::Sha3_256 => Self::hash_message_digest::<Sha3_256>(message, hash_out),
+        }
+    }
+
+    fn hash_message_digest<D: Digest>(message: &[u8], hash_out: &mut [u8]) {
+        let mut hash = D::new();
+        hash.update(message);
+        let hash = hash.finalize();
+        hash_out.copy_from_slice(&hash[..hash_out.len()]);
     }
 
     pub fn derive(&self, num_derivations: usize) -> Key<V> {
