@@ -537,4 +537,48 @@ mod test {
         ))[..549];
         assert!(key.validate_tag0(tag0, tag0_gst, prna, navdata_adkd0));
     }
+
+    fn test_mack() -> Mack<'static> {
+        // Data broadcast by E19 on 2022-03-07 ~9:00 UTC
+        let key_size = 128;
+        let tag_size = 40;
+        Mack::new(
+            &hex!(
+                "
+                7e ff 9e 16 a5 dd f0 04 f0 3c 9b 6b 1b 07 4d 49
+                2e dd 67 0b 02 60 ef 9b 83 36 13 c0 94 a8 72 a7
+                f6 12 05 8f 2e f7 63 24 0e c5 ca 40 0f ad f1 12
+                47 9f 05 44 9a 25 d8 2e 80 c8 00 00"
+            ),
+            key_size,
+            tag_size,
+        )
+    }
+
+    fn test_key() -> Key<NotValidated> {
+        Key::from_slice(
+            &hex!("19 58 e7 76 6f b4 08 cb d6 a8 de fc e4 c7 d5 66"),
+            Gst::new(1176, 121080),
+            &test_chain(),
+        )
+    }
+
+    #[test]
+    fn adkd() {
+        let mack = test_mack();
+        let prna = 19;
+        for j in 1..mack.num_tags() {
+            assert!(test_chain()
+                .check_adkd(j, mack.tag_and_info(j), prna, Gst::new(1176, 121050))
+                .is_ok());
+        }
+    }
+
+    #[test]
+    fn macseq() {
+        let key = test_key().force_valid();
+        let mack = test_mack();
+        let prna = 19;
+        assert!(key.check_macseq(mack, prna, Gst::new(1176, 121050)));
+    }
 }
