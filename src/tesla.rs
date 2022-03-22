@@ -118,10 +118,10 @@ impl Chain {
         self.alpha
     }
 
-    pub fn validate_adkd(
+    pub fn validate_adkd<V>(
         &self,
         num_tag: usize,
-        tag: TagAndInfo,
+        tag: TagAndInfo<V>,
         prna: usize,
         gst_tag: Gst,
     ) -> Result<(), AdkdCheckError> {
@@ -443,7 +443,7 @@ impl Key<Validated> {
         computed == tag
     }
 
-    pub fn validate_macseq(&self, mack: Mack, prna: usize, gst_mack: Gst) -> bool {
+    pub fn validate_macseq<V>(&self, mack: &Mack<V>, prna: usize, gst_mack: Gst) -> bool {
         // No MACLTs with FLEX tags are defined currently, so FLEX
         // tags are not taken into account. This will need to be
         // updated when FLEX tags are added to the MACLTs.
@@ -538,7 +538,7 @@ mod test {
         assert!(key.validate_tag0(tag0, tag0_gst, prna, navdata_adkd0));
     }
 
-    fn test_mack() -> Mack<'static> {
+    fn test_mack() -> Mack<'static, NotValidated> {
         // Data broadcast by E19 on 2022-03-07 ~9:00 UTC
         let key_size = 128;
         let tag_size = 40;
@@ -579,6 +579,6 @@ mod test {
         let key = test_key().force_valid();
         let mack = test_mack();
         let prna = 19;
-        assert!(key.validate_macseq(mack, prna, Gst::new(1176, 121050)));
+        assert!(key.validate_macseq(&mack, prna, Gst::new(1176, 121050)));
     }
 }

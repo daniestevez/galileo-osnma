@@ -1,4 +1,4 @@
-use crate::bitfields::{Adkd, DsmHeader, DsmKroot, Mack, NmaHeader, TagAndInfo};
+use crate::bitfields::{DsmHeader, DsmKroot, Mack, NmaHeader};
 use crate::dsm::CollectDsm;
 use crate::gst::Gst;
 use crate::mack::MackStorage;
@@ -6,7 +6,7 @@ use crate::navmessage::CollectNavMessage;
 use crate::subframe::CollectSubframe;
 use crate::tesla::Key;
 use crate::types::{
-    BitSlice, HkrootMessage, InavWord, MackMessage, OsnmaDataMessage, Validated, NUM_SVNS,
+    HkrootMessage, InavWord, MackMessage, NotValidated, OsnmaDataMessage, Validated, NUM_SVNS,
 };
 
 use core::cmp::Ordering;
@@ -162,191 +162,56 @@ impl OsnmaData {
                 return;
             }
         };
-        let gst_tags = current_key.gst_subframe().add_seconds(-30);
-        let gst_navmessage = gst_tags.add_seconds(-30);
+        let gst_mack = current_key.gst_subframe().add_seconds(-30);
+        let gst_slowmac = gst_mack.add_seconds(-300);
+        // Re-generate the key that was used for the MACSEQ of the
+        // Slow MAC MACK
+        let slowmac_key = current_key.derive(10);
         for svn in 1..=NUM_SVNS {
             let svn_u8 = u8::try_from(svn).unwrap();
-            if let Some(mack) = self.mack.get(svn, gst_tags) {
+            if let Some(mack) = self.mack.get(svn, gst_mack) {
                 let mack = Mack::new(
                     mack,
                     current_key.chain().key_size_bits(),
                     current_key.chain().tag_size_bits(),
                 );
-                if !Self::validate_macseq(&current_key, mack, svn_u8, gst_tags) {
-                    // wrong MACSEQ
-                    continue;
-                }
-                // Try to validate tag0
-                if let Some(navdata) = self.navmessage.ced_and_status(svn, gst_navmessage) {
-                    Self::validate_tag(
-                        &current_key,
-                        mack.tag0(),
-                        Adkd::InavCed,
-                        gst_tags,
-                        svn_u8,
-                        svn_u8,
-                        0,
-                        navdata,
-                    );
-                }
-                // Try to validate InavCed and InavTiming tags
-                for j in 1..mack.num_tags() {
-                    let tag = mack.tag_and_info(j);
-                    let prnd = match u8::try_from(tag.prnd()) {
-                        Ok(p) => p,
-                        Err(_) => {
-                            log::error!("could not obtain PRND from tag {:?}", tag);
-                            continue;
-                        }
-                    };
-                    if let Some(navdata) = match tag.adkd() {
-                        Adkd::InavCed => {
-                            self.navmessage.ced_and_status(prnd.into(), gst_navmessage)
-                        }
-                        Adkd::InavTiming => self.navmessage.timing_parameters(gst_navmessage),
-                        Adkd::SlowMac => {
-                            // Slow MAC is not processed here, because the key doesn't
-                            // have the appropriate extra delay
-                            None
-                        }
-                        Adkd::Reserved => {
-                            log::error!("reserved ADKD in tag {:?}", tag);
-                            None
-                        }
-                    } {
-                        let prnd = if tag.adkd() == Adkd::InavTiming {
-                            svn_u8
-                        } else {
-                            prnd
-                        };
-                        if Self::validate_adkd(&current_key, tag, gst_tags, svn_u8, j) {
-                            Self::validate_tag(
-                                &current_key,
-                                tag.tag(),
-                                tag.adkd(),
-                                gst_tags,
-                                prnd,
-                                svn_u8,
-                                j,
-                                navdata,
-                            );
-                        }
-                    }
-                }
+                if let Some(mack) = Self::validate_mack(mack, &current_key, svn_u8, gst_mack) {
+                    self.navmessage
+                        .process_mack(mack, &current_key, svn, gst_mack);
+                };
             }
 
             // Try to validate Slow MAC
             // This needs fetching a tag which is 300 seconds older than for
             // the other ADKDs
-            let gst_tag_slowmac = gst_tags.add_seconds(-300);
-            if let Some(mack) = self.mack.get(svn, gst_tag_slowmac) {
+            if let Some(mack) = self.mack.get(svn, gst_slowmac) {
                 let mack = Mack::new(
                     mack,
                     current_key.chain().key_size_bits(),
                     current_key.chain().tag_size_bits(),
                 );
-                // re-generate the key that was used for this MACK
-                let mack_key = current_key.derive(10);
-                if !Self::validate_macseq(&mack_key, mack, svn_u8, gst_tag_slowmac) {
-                    // wrong MACSEQ
-                    continue;
-                }
-                for j in 1..mack.num_tags() {
-                    let tag = mack.tag_and_info(j);
-                    if tag.adkd() != Adkd::SlowMac {
-                        continue;
-                    }
-                    let prnd = match u8::try_from(tag.prnd()) {
-                        Ok(p) => p,
-                        Err(_) => {
-                            log::error!("could not obtain PRND from tag {:?}", tag);
-                            continue;
-                        }
-                    };
-                    if let Some(navdata) = self
-                        .navmessage
-                        .ced_and_status(prnd.into(), gst_navmessage.add_seconds(-300))
-                    {
-                        if Self::validate_adkd(&current_key, tag, gst_tag_slowmac, svn_u8, j) {
-                            Self::validate_tag(
-                                &current_key,
-                                tag.tag(),
-                                tag.adkd(),
-                                gst_tag_slowmac,
-                                prnd,
-                                svn_u8,
-                                j,
-                                navdata,
-                            );
-                        }
-                    }
+                // Note that slowmac_key is used for validation of the MACK, while
+                // current_key is used for validation of the Slow MAC tags it contains.
+                if let Some(mack) = Self::validate_mack(mack, &slowmac_key, svn_u8, gst_slowmac) {
+                    self.navmessage
+                        .process_mack_slowmac(mack, &current_key, svn, gst_slowmac);
                 }
             }
         }
     }
 
-    fn validate_macseq(key: &Key<Validated>, mack: Mack, prna: u8, gst_mack: Gst) -> bool {
-        let ret = key.validate_macseq(mack, prna.into(), gst_mack);
-        if !ret {
-            log::error!("wrong MACSEQ for MACK {:?}", mack);
-        }
-        ret
-    }
-
-    fn validate_adkd(
+    fn validate_mack<'a>(
+        mack: Mack<'a, NotValidated>,
         key: &Key<Validated>,
-        tag: TagAndInfo,
-        gst_tag: Gst,
         prna: u8,
-        tag_idx: usize,
-    ) -> bool {
-        match key
-            .chain()
-            .validate_adkd(tag_idx, tag, prna.into(), gst_tag)
-        {
-            Ok(()) => true,
+        gst_mack: Gst,
+    ) -> Option<Mack<'a, Validated>> {
+        match mack.validate(key, prna.into(), gst_mack) {
             Err(e) => {
-                log::error!("wrong ADKD for tag {:?}: {:?}", tag, e);
-                false
+                log::error!("error validating MACK {:?}: {:?}", mack, e);
+                None
             }
+            Ok(m) => Some(m),
         }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn validate_tag(
-        key: &Key<Validated>,
-        tag: &BitSlice,
-        adkd: Adkd,
-        gst_tag: Gst,
-        prnd: u8,
-        prna: u8,
-        tag_idx: usize,
-        navdata: &BitSlice,
-    ) -> bool {
-        let ctr = (tag_idx + 1).try_into().unwrap();
-        let ret = match tag_idx {
-            0 => key.validate_tag0(tag, gst_tag, prna, navdata),
-            _ => key.validate_tag(tag, gst_tag, prnd, prna, ctr, navdata),
-        };
-        if ret {
-            log::info!(
-                "E{:02} {:?} at {:?} tag{} correct (auth by E{:02})",
-                prnd,
-                adkd,
-                gst_tag,
-                tag_idx,
-                prna
-            );
-        } else {
-            log::error!(
-                "E{:02} {:?} at {:?} tag{} wrong (auth by E{:02})",
-                prnd,
-                adkd,
-                gst_tag,
-                tag_idx,
-                prna
-            );
-        }
-        ret
     }
 }

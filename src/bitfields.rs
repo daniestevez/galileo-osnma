@@ -1,5 +1,7 @@
+use crate::gst::Gst;
 use crate::gst::{Towh, Wn};
-use crate::types::{BitSlice, MackMessage, MACK_MESSAGE_BYTES};
+use crate::tesla::{AdkdCheckError, Key};
+use crate::types::{BitSlice, MackMessage, NotValidated, Validated, MACK_MESSAGE_BYTES};
 use bitvec::prelude::*;
 use core::fmt;
 use p256::ecdsa::{
@@ -332,21 +334,25 @@ impl fmt::Debug for DsmKroot<'_> {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct Mack<'a> {
+pub struct Mack<'a, V> {
     data: &'a BitSlice,
     key_size: usize,
     tag_size: usize,
+    _validated: V,
 }
 
-impl<'a> Mack<'a> {
-    pub fn new(data: &MackMessage, key_size: usize, tag_size: usize) -> Mack {
+impl<'a> Mack<'a, NotValidated> {
+    pub fn new(data: &MackMessage, key_size: usize, tag_size: usize) -> Mack<NotValidated> {
         Mack {
             data: BitSlice::from_slice(data),
             key_size,
             tag_size,
+            _validated: NotValidated {},
         }
     }
+}
 
+impl<'a, V> Mack<'a, V> {
     pub fn key_size(&self) -> usize {
         self.key_size
     }
@@ -364,14 +370,6 @@ impl<'a> Mack<'a> {
         self.data[self.tag_size()..self.tag_size() + macseq_size].load_be::<u16>()
     }
 
-    pub fn tag_and_info(&self, n: usize) -> TagAndInfo {
-        assert!(0 < n && n < self.num_tags());
-        let size = self.tag_size() + 16;
-        TagAndInfo {
-            data: &self.data[size * n..size * (n + 1)],
-        }
-    }
-
     pub fn num_tags(&self) -> usize {
         (8 * MACK_MESSAGE_BYTES - self.key_size()) / (self.tag_size() + 16)
     }
@@ -382,7 +380,56 @@ impl<'a> Mack<'a> {
     }
 }
 
-impl fmt::Debug for Mack<'_> {
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum MackValidationError {
+    WrongMacseq,
+    WrongAdkd {
+        tag_index: usize,
+        error: AdkdCheckError,
+    },
+}
+
+impl<'a, V: Clone> Mack<'a, V> {
+    pub fn validate(
+        &self,
+        key: &'_ Key<Validated>,
+        prna: usize,
+        gst_mack: Gst,
+    ) -> Result<Mack<'a, Validated>, MackValidationError> {
+        if !key.validate_macseq(self, prna, gst_mack) {
+            return Err(MackValidationError::WrongMacseq);
+        }
+
+        for j in 1..self.num_tags() {
+            let tag = self.tag_and_info(j);
+            if let Err(e) = key.chain().validate_adkd(j, tag, prna, gst_mack) {
+                return Err(MackValidationError::WrongAdkd {
+                    tag_index: j,
+                    error: e,
+                });
+            }
+        }
+        Ok(Mack {
+            data: self.data,
+            key_size: self.key_size,
+            tag_size: self.tag_size,
+            _validated: Validated {},
+        })
+    }
+}
+
+impl<'a, V: Clone> Mack<'a, V> {
+    pub fn tag_and_info(&self, n: usize) -> TagAndInfo<'_, V> {
+        assert!(0 < n && n < self.num_tags());
+        let size = self.tag_size() + 16;
+        TagAndInfo {
+            data: &self.data[size * n..size * (n + 1)],
+            _validated: self._validated.clone(),
+        }
+    }
+}
+
+impl<V: fmt::Debug + Clone> fmt::Debug for Mack<'_, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut dbg = f.debug_struct("Mack");
         dbg.field("tag0", &self.tag0())
@@ -390,13 +437,16 @@ impl fmt::Debug for Mack<'_> {
         for tag in 1..self.num_tags() {
             dbg.field("tag", &self.tag_and_info(tag));
         }
-        dbg.field("key", &self.key()).finish()
+        dbg.field("key", &self.key())
+            .field("_validated", &self._validated)
+            .finish()
     }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct TagAndInfo<'a> {
+pub struct TagAndInfo<'a, V> {
     data: &'a BitSlice,
+    _validated: V,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -425,7 +475,7 @@ pub enum Adkd {
     Reserved,
 }
 
-impl<'a> TagAndInfo<'a> {
+impl<'a, V> TagAndInfo<'a, V> {
     pub fn tag(&self) -> &BitSlice {
         &self.data[..self.data.len() - 16]
     }
@@ -450,12 +500,13 @@ impl<'a> TagAndInfo<'a> {
     }
 }
 
-impl fmt::Debug for TagAndInfo<'_> {
+impl<V: fmt::Debug> fmt::Debug for TagAndInfo<'_, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TagAndInfo")
             .field("tag", &self.tag())
             .field("prnd", &self.prnd())
             .field("adkd", &self.adkd())
+            .field("_validated", &self._validated)
             .finish()
     }
 }
