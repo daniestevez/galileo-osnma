@@ -22,7 +22,7 @@ fn main() -> std::io::Result<()> {
     let pubkey = load_pubkey(&args[1])?;
 
     let mut read = ReadTransport::new(std::io::stdin());
-    let mut osnma = Osnma::from_pubkey(pubkey);
+    let mut osnma = Osnma::from_pubkey(pubkey, false);
 
     loop {
         let packet = read.read_packet()?;

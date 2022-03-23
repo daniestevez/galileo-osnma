@@ -33,10 +33,11 @@ struct OsnmaData {
     mack: MackStorage,
     pubkey: VerifyingKey,
     key: Option<Key<Validated>>,
+    only_slowmac: bool,
 }
 
 impl Osnma {
-    pub fn from_pubkey(pubkey: VerifyingKey) -> Osnma {
+    pub fn from_pubkey(pubkey: VerifyingKey, only_slowmac: bool) -> Osnma {
         Osnma {
             subframe: CollectSubframe::new(),
             data: OsnmaDsm {
@@ -46,6 +47,7 @@ impl Osnma {
                     mack: MackStorage::new(),
                     pubkey,
                     key: None,
+                    only_slowmac,
                 },
             },
         }
@@ -169,16 +171,18 @@ impl OsnmaData {
         let slowmac_key = current_key.derive(10);
         for svn in 1..=NUM_SVNS {
             let svn_u8 = u8::try_from(svn).unwrap();
-            if let Some(mack) = self.mack.get(svn, gst_mack) {
-                let mack = Mack::new(
-                    mack,
-                    current_key.chain().key_size_bits(),
-                    current_key.chain().tag_size_bits(),
-                );
-                if let Some(mack) = Self::validate_mack(mack, &current_key, svn_u8, gst_mack) {
-                    self.navmessage
-                        .process_mack(mack, &current_key, svn, gst_mack);
-                };
+            if !self.only_slowmac {
+                if let Some(mack) = self.mack.get(svn, gst_mack) {
+                    let mack = Mack::new(
+                        mack,
+                        current_key.chain().key_size_bits(),
+                        current_key.chain().tag_size_bits(),
+                    );
+                    if let Some(mack) = Self::validate_mack(mack, &current_key, svn_u8, gst_mack) {
+                        self.navmessage
+                            .process_mack(mack, &current_key, svn, gst_mack);
+                    };
+                }
             }
 
             // Try to validate Slow MAC
