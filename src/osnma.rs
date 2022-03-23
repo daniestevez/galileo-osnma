@@ -2,7 +2,7 @@ use crate::bitfields::{DsmHeader, DsmKroot, Mack, NmaHeader};
 use crate::dsm::CollectDsm;
 use crate::gst::Gst;
 use crate::mack::MackStorage;
-use crate::navmessage::CollectNavMessage;
+use crate::navmessage::{CollectNavMessage, NavMessageData};
 use crate::subframe::CollectSubframe;
 use crate::tesla::Key;
 use crate::types::{
@@ -65,6 +65,14 @@ impl Osnma {
         if let Some((hkroot, mack, subframe_gst)) = self.subframe.feed(osnma, svn, gst) {
             self.data.process_subframe(hkroot, mack, svn, subframe_gst);
         }
+    }
+
+    pub fn get_ced_and_status(&self, svn: usize) -> Option<NavMessageData> {
+        self.data.data.navmessage.get_ced_and_status(svn)
+    }
+
+    pub fn get_timing_parameters(&self) -> Option<NavMessageData> {
+        self.data.data.navmessage.get_timing_parameters()
     }
 }
 

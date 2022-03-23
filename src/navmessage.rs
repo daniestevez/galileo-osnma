@@ -9,12 +9,36 @@ use bitvec::prelude::*;
 // in the MACK refer to the previous subframe.
 const DEPTH: usize = 13;
 
+// Minimum equivalent tag for authentication. Currently defined as 80 bits
+const MIN_AUTHBITS: u16 = 80;
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct CollectNavMessage {
     ced_and_status: [[CedAndStatus; NUM_SVNS]; DEPTH],
     timing_parameters: [TimingParameters; DEPTH],
     gsts: [Option<Gst>; DEPTH],
     write_pointer: usize,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct NavMessageData<'a> {
+    data: &'a BitSlice,
+    authbits: u16,
+    gst: Gst,
+}
+
+impl<'a> NavMessageData<'a> {
+    pub fn data(&'_ self) -> &'a BitSlice {
+        self.data
+    }
+
+    pub fn authbits(&self) -> u16 {
+        self.authbits
+    }
+
+    pub fn gst(&self) -> Gst {
+        self.gst
+    }
 }
 
 impl CollectNavMessage {
@@ -78,14 +102,38 @@ impl CollectNavMessage {
         }
     }
 
-    pub fn ced_and_status(&self, svn: usize, gst: Gst) -> Option<&BitSlice> {
+    pub fn get_ced_and_status(&self, svn: usize) -> Option<NavMessageData> {
         Self::check_svn(svn);
-        let item = &self.ced_and_status[self.find_gst(gst)?][svn - 1];
-        if !item.stale && item.all_valid() {
-            Some(item.message_bits())
-        } else {
-            None
+        let svn_idx = svn - 1;
+        // Search in order of decreasing Gst
+        for j in 0..DEPTH {
+            let idx = (DEPTH + self.write_pointer - j) % DEPTH;
+            let item = &self.ced_and_status[idx][svn_idx];
+            if !item.stale && item.all_valid() && item.authbits >= MIN_AUTHBITS {
+                return Some(NavMessageData {
+                    data: item.message_bits(),
+                    authbits: item.authbits,
+                    gst: self.gsts[idx].unwrap(),
+                });
+            }
         }
+        None
+    }
+
+    pub fn get_timing_parameters(&self) -> Option<NavMessageData> {
+        // Search in order of decreasing Gst
+        for j in 0..DEPTH {
+            let idx = (DEPTH + self.write_pointer - j) % DEPTH;
+            let item = &self.timing_parameters[idx];
+            if item.all_valid() && item.authbits >= MIN_AUTHBITS {
+                return Some(NavMessageData {
+                    data: item.message_bits(),
+                    authbits: item.authbits,
+                    gst: self.gsts[idx].unwrap(),
+                });
+            }
+        }
+        None
     }
 
     fn ced_and_status_as_mut(&mut self, svn: usize, gst: Gst) -> Option<&mut CedAndStatus> {
@@ -93,15 +141,6 @@ impl CollectNavMessage {
         let item = &mut self.ced_and_status[self.find_gst(gst)?][svn - 1];
         if !item.stale && item.all_valid() {
             Some(item)
-        } else {
-            None
-        }
-    }
-
-    pub fn timing_parameters(&self, gst: Gst) -> Option<&BitSlice> {
-        let item = &self.timing_parameters[self.find_gst(gst)?];
-        if item.all_valid() {
-            Some(item.message_bits())
         } else {
             None
         }

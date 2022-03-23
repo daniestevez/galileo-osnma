@@ -1,6 +1,7 @@
 use galileo_osnma::{
     galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport},
     gst::Wn,
+    types::{BitSlice, NUM_SVNS},
     Gst, Osnma,
 };
 use p256::ecdsa::VerifyingKey;
@@ -23,6 +24,8 @@ fn main() -> std::io::Result<()> {
 
     let mut read = ReadTransport::new(std::io::stdin());
     let mut osnma = Osnma::from_pubkey(pubkey, false);
+    let mut timing_parameters_gst: Option<Gst> = None;
+    let mut ced_and_status_data: [Option<[u8; 69]>; NUM_SVNS] = [None; NUM_SVNS];
 
     loop {
         let packet = read.read_packet()?;
@@ -45,6 +48,43 @@ fn main() -> std::io::Result<()> {
             osnma.feed_inav(inav_word[..].try_into().unwrap(), svn, gst);
             if let Some(osnma_data) = osnma_data {
                 osnma.feed_osnma(osnma_data[..].try_into().unwrap(), svn, gst);
+            }
+
+            for svn in 1..=NUM_SVNS {
+                let idx = svn - 1;
+                if let Some(data) = osnma.get_ced_and_status(svn) {
+                    let mut data_bytes = [0u8; 69];
+                    let a = BitSlice::from_slice_mut(&mut data_bytes);
+                    let b = data.data();
+                    a[..b.len()].copy_from_bitslice(b);
+                    if !ced_and_status_data[idx]
+                        .map(|d| d == data_bytes)
+                        .unwrap_or(false)
+                    {
+                        log::info!(
+                            "new CED and status for E{:02} authenticated \
+                                    (authbits = {}, GST = {:?})",
+                            svn,
+                            data.authbits(),
+                            data.gst()
+                        );
+                        ced_and_status_data[idx] = Some(data_bytes);
+                    }
+                }
+            }
+
+            if let Some(data) = osnma.get_timing_parameters() {
+                if !timing_parameters_gst
+                    .map(|g| g == data.gst())
+                    .unwrap_or(false)
+                {
+                    log::info!(
+                        "new timing parameters authenticated (authbits = {}, GST = {:?})",
+                        data.authbits(),
+                        data.gst()
+                    );
+                    timing_parameters_gst = Some(data.gst());
+                }
             }
         }
     }

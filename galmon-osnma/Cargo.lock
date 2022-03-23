@@ -318,6 +318,7 @@ dependencies = [
  "ecdsa",
  "env_logger",
  "galileo-osnma",
+ "log",
  "p256",
  "spki",
 ]
