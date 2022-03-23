@@ -23,10 +23,12 @@ ecdsa = "0.13"
 generic-array = "0.14"
 hmac = "0.12"
 log = "0.4"
-p256 = { version = "0.10", features = ["ecdsa"] }
+# This brings std with default-features
+p256 = { version = "0.10", features = ["ecdsa"], default-features = false }
 prost = { version = "0.9", optional = true }
-sha2 = "0.10"
-sha3 = "0.10"
+# These two bring std with default-features
+sha2 = { version = "0.10", default-features = false }
+sha3 = { version = "0.10", default-features = false }
 typenum = "1.15"
 
 [build-dependencies]
