@@ -302,6 +302,7 @@ dependencies = [
  "cmac",
  "crypto-common",
  "ecdsa",
+ "generic-array",
  "hmac 0.12.1",
  "log",
  "p256",
@@ -309,6 +310,7 @@ dependencies = [
  "prost-build",
  "sha2 0.10.2",
  "sha3",
+ "typenum",
 ]
 
 [[package]]

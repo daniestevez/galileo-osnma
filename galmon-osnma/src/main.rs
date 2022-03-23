@@ -1,7 +1,7 @@
 use galileo_osnma::{
     galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport},
     gst::Wn,
-    types::{BitSlice, NUM_SVNS},
+    types::{BitSlice, FullStorage, NUM_SVNS},
     Gst, Osnma,
 };
 use p256::ecdsa::VerifyingKey;
@@ -23,7 +23,7 @@ fn main() -> std::io::Result<()> {
     let pubkey = load_pubkey(&args[1])?;
 
     let mut read = ReadTransport::new(std::io::stdin());
-    let mut osnma = Osnma::from_pubkey(pubkey, false);
+    let mut osnma = Osnma::<FullStorage>::from_pubkey(pubkey, false);
     let mut timing_parameters_gst: Option<Gst> = None;
     let mut ced_and_status_data: [Option<[u8; 69]>; NUM_SVNS] = [None; NUM_SVNS];
 

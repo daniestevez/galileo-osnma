@@ -1,25 +1,24 @@
 use crate::gst::Gst;
-use crate::types::{MackMessage, NUM_SVNS};
+use crate::types::{MackMessage, StaticStorage, NUM_SVNS};
+use generic_array::GenericArray;
+use typenum::Unsigned;
 
-// Number of subframes to store.
-// This is 12 because we need to store the current subframe,
-// the previous subframe because its tags correspond to the
-// key in the current subframe, and also the 10 previous subframes
-// to this to acccount for Slow MAC.
-const DEPTH: usize = 12;
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct MackStorage {
-    macks: [[Option<MackMessage>; NUM_SVNS]; DEPTH],
-    gsts: [Option<Gst>; DEPTH],
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct MackStorage<S: StaticStorage> {
+    macks: GenericArray<[Option<MackMessage>; NUM_SVNS], S::MackDepth>,
+    gsts: GenericArray<Option<Gst>, S::MackDepth>,
     write_pointer: usize,
 }
 
-impl MackStorage {
-    pub fn new() -> MackStorage {
+impl<S: StaticStorage> MackStorage<S> {
+    pub fn new() -> MackStorage<S> {
+        let n = S::MackDepth::to_usize();
+        let macks =
+            GenericArray::from_exact_iter(core::iter::repeat([None; NUM_SVNS]).take(n)).unwrap();
+        let gsts = GenericArray::from_exact_iter(core::iter::repeat(None).take(n)).unwrap();
         MackStorage {
-            macks: [[None; NUM_SVNS]; DEPTH],
-            gsts: [None; DEPTH],
+            macks,
+            gsts,
             write_pointer: 0,
         }
     }
@@ -52,7 +51,7 @@ impl MackStorage {
                     gst,
                     g
                 );
-                self.write_pointer = (self.write_pointer + 1) % DEPTH;
+                self.write_pointer = (self.write_pointer + 1) % S::MackDepth::USIZE;
                 self.macks[self.write_pointer] = [None; NUM_SVNS];
             }
         }
@@ -70,8 +69,8 @@ impl MackStorage {
     }
 }
 
-impl Default for MackStorage {
-    fn default() -> MackStorage {
+impl<S: StaticStorage> Default for MackStorage<S> {
+    fn default() -> MackStorage<S> {
         MackStorage::new()
     }
 }

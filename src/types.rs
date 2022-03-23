@@ -1,3 +1,7 @@
+use crate::navmessage::{CedAndStatus, TimingParameters};
+use crate::Gst;
+use generic_array::ArrayLength;
+
 pub const HKROOT_SECTION_BYTES: usize = 1;
 pub const MACK_SECTION_BYTES: usize = 4;
 pub type HkrootSection = [u8; HKROOT_SECTION_BYTES];
@@ -25,3 +29,56 @@ pub struct Validated {}
 pub struct NotValidated {}
 
 pub const NUM_SVNS: usize = 36;
+
+pub trait StaticStorageTypenum:
+    typenum::marker_traits::Unsigned
+    + core::fmt::Debug
+    + core::cmp::PartialEq
+    + core::cmp::Eq
+    + ArrayLength<[CedAndStatus; NUM_SVNS]>
+    + ArrayLength<TimingParameters>
+    + ArrayLength<Option<Gst>>
+    + ArrayLength<[Option<MackMessage>; NUM_SVNS]>
+{
+}
+
+impl<T> StaticStorageTypenum for T where
+    T: typenum::marker_traits::Unsigned
+        + core::fmt::Debug
+        + core::cmp::PartialEq
+        + core::cmp::Eq
+        + ArrayLength<[CedAndStatus; NUM_SVNS]>
+        + ArrayLength<TimingParameters>
+        + ArrayLength<Option<Gst>>
+        + ArrayLength<[Option<MackMessage>; NUM_SVNS]>
+{
+}
+
+pub trait StaticStorage {
+    // Number of subframes to store.
+    // This should usually be 1 more than the DEPTH of the MackStorage, because tags
+    // in the MACK refer to the previous subframe.
+    type NavMessageDepth: StaticStorageTypenum;
+    // Number of subframes to store.
+    // For full storage this is 12 because we need to store the current subframe,
+    // the previous subframe because its tags correspond to the
+    // key in the current subframe, and also the 10 previous subframes
+    // to this to acccount for Slow MAC.
+    type MackDepth: StaticStorageTypenum;
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct FullStorage {}
+
+impl StaticStorage for FullStorage {
+    type NavMessageDepth = typenum::U13;
+    type MackDepth = typenum::U12;
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct NoSlowMacStorage {}
+
+impl StaticStorage for NoSlowMacStorage {
+    type NavMessageDepth = typenum::U3;
+    type MackDepth = typenum::U2;
+}

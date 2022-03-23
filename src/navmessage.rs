@@ -1,22 +1,19 @@
 use crate::bitfields::{Adkd, Mack};
 use crate::gst::Gst;
 use crate::tesla::Key;
-use crate::types::{BitSlice, InavWord, Validated, NUM_SVNS};
+use crate::types::{BitSlice, InavWord, StaticStorage, Validated, NUM_SVNS};
 use bitvec::prelude::*;
-
-// Number of subframes to store.
-// This should usually be 1 more than the DEPTH of the MackStorage, because tags
-// in the MACK refer to the previous subframe.
-const DEPTH: usize = 13;
+use generic_array::GenericArray;
+use typenum::Unsigned;
 
 // Minimum equivalent tag for authentication. Currently defined as 80 bits
 const MIN_AUTHBITS: u16 = 80;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct CollectNavMessage {
-    ced_and_status: [[CedAndStatus; NUM_SVNS]; DEPTH],
-    timing_parameters: [TimingParameters; DEPTH],
-    gsts: [Option<Gst>; DEPTH],
+pub struct CollectNavMessage<S: StaticStorage> {
+    ced_and_status: GenericArray<[CedAndStatus; NUM_SVNS], S::NavMessageDepth>,
+    timing_parameters: GenericArray<TimingParameters, S::NavMessageDepth>,
+    gsts: GenericArray<Option<Gst>, S::NavMessageDepth>,
     write_pointer: usize,
 }
 
@@ -41,12 +38,21 @@ impl<'a> NavMessageData<'a> {
     }
 }
 
-impl CollectNavMessage {
-    pub fn new() -> CollectNavMessage {
+impl<S: StaticStorage> CollectNavMessage<S> {
+    pub fn new() -> CollectNavMessage<S> {
+        let n = S::NavMessageDepth::to_usize();
+        let ced_and_status = GenericArray::from_exact_iter(
+            core::iter::repeat([CedAndStatus::new(); NUM_SVNS]).take(n),
+        )
+        .unwrap();
+        let timing_parameters =
+            GenericArray::from_exact_iter(core::iter::repeat(TimingParameters::new()).take(n))
+                .unwrap();
+        let gsts = GenericArray::from_exact_iter(core::iter::repeat(None).take(n)).unwrap();
         CollectNavMessage {
-            ced_and_status: [[CedAndStatus::new(); NUM_SVNS]; DEPTH],
-            timing_parameters: [TimingParameters::new(); DEPTH],
-            gsts: [None; DEPTH],
+            ced_and_status,
+            timing_parameters,
+            gsts: gsts,
             write_pointer: 0,
         }
     }
@@ -86,7 +92,7 @@ impl CollectNavMessage {
                     gst,
                     g
                 );
-                let new_pointer = (self.write_pointer + 1) % DEPTH;
+                let new_pointer = (self.write_pointer + 1) % S::NavMessageDepth::USIZE;
                 self.ced_and_status[new_pointer] = self.ced_and_status[self.write_pointer];
                 self.timing_parameters[new_pointer].reset();
                 self.write_pointer = new_pointer;
@@ -106,8 +112,9 @@ impl CollectNavMessage {
         Self::check_svn(svn);
         let svn_idx = svn - 1;
         // Search in order of decreasing Gst
-        for j in 0..DEPTH {
-            let idx = (DEPTH + self.write_pointer - j) % DEPTH;
+        for j in 0..S::NavMessageDepth::USIZE {
+            let idx =
+                (S::NavMessageDepth::USIZE + self.write_pointer - j) % S::NavMessageDepth::USIZE;
             let item = &self.ced_and_status[idx][svn_idx];
             if !item.stale && item.all_valid() && item.authbits >= MIN_AUTHBITS {
                 return Some(NavMessageData {
@@ -122,8 +129,9 @@ impl CollectNavMessage {
 
     pub fn get_timing_parameters(&self) -> Option<NavMessageData> {
         // Search in order of decreasing Gst
-        for j in 0..DEPTH {
-            let idx = (DEPTH + self.write_pointer - j) % DEPTH;
+        for j in 0..S::NavMessageDepth::USIZE {
+            let idx =
+                (S::NavMessageDepth::USIZE + self.write_pointer - j) % S::NavMessageDepth::USIZE;
             let item = &self.timing_parameters[idx];
             if item.all_valid() && item.authbits >= MIN_AUTHBITS {
                 return Some(NavMessageData {
@@ -138,7 +146,8 @@ impl CollectNavMessage {
 
     fn ced_and_status_as_mut(&mut self, svn: usize, gst: Gst) -> Option<&mut CedAndStatus> {
         Self::check_svn(svn);
-        let item = &mut self.ced_and_status[self.find_gst(gst)?][svn - 1];
+        let idx = self.find_gst(gst)?;
+        let item = &mut self.ced_and_status[idx][svn - 1];
         if !item.stale && item.all_valid() {
             Some(item)
         } else {
@@ -147,7 +156,8 @@ impl CollectNavMessage {
     }
 
     fn timing_parameters_as_mut(&mut self, gst: Gst) -> Option<&mut TimingParameters> {
-        let item = &mut self.timing_parameters[self.find_gst(gst)?];
+        let idx = self.find_gst(gst)?;
+        let item = &mut self.timing_parameters[idx];
         if item.all_valid() {
             Some(item)
         } else {
@@ -312,8 +322,8 @@ impl CollectNavMessage {
     }
 }
 
-impl Default for CollectNavMessage {
-    fn default() -> CollectNavMessage {
+impl<S: StaticStorage> Default for CollectNavMessage<S> {
+    fn default() -> CollectNavMessage<S> {
         CollectNavMessage::new()
     }
 }
@@ -322,7 +332,7 @@ pub const CED_AND_STATUS_BYTES: usize = 69;
 const CED_AND_STATUS_WORDS: usize = 5;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-struct CedAndStatus {
+pub struct CedAndStatus {
     data: [u8; CED_AND_STATUS_BYTES],
     valid: [bool; CED_AND_STATUS_WORDS],
     stale: bool,
@@ -333,7 +343,7 @@ pub const TIMING_PARAMETERS_BYTES: usize = 21;
 const TIMING_PARAMETERS_WORDS: usize = 2;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-struct TimingParameters {
+pub struct TimingParameters {
     data: [u8; TIMING_PARAMETERS_BYTES],
     valid: [bool; TIMING_PARAMETERS_WORDS],
     authbits: u16,

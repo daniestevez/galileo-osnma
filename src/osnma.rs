@@ -6,38 +6,39 @@ use crate::navmessage::{CollectNavMessage, NavMessageData};
 use crate::subframe::CollectSubframe;
 use crate::tesla::Key;
 use crate::types::{
-    HkrootMessage, InavWord, MackMessage, NotValidated, OsnmaDataMessage, Validated, NUM_SVNS,
+    HkrootMessage, InavWord, MackMessage, NotValidated, OsnmaDataMessage, StaticStorage, Validated,
+    NUM_SVNS,
 };
 
 use core::cmp::Ordering;
 use p256::ecdsa::VerifyingKey;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Osnma {
+pub struct Osnma<S: StaticStorage> {
     subframe: CollectSubframe,
-    data: OsnmaDsm,
+    data: OsnmaDsm<S>,
 }
 
 // These structures exist only in order to avoid double mutable
 // borrows of Osnma because we take references from CollectSubframe
 // and CollectDsm
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct OsnmaDsm {
+struct OsnmaDsm<S: StaticStorage> {
     dsm: CollectDsm,
-    data: OsnmaData,
+    data: OsnmaData<S>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct OsnmaData {
-    navmessage: CollectNavMessage,
-    mack: MackStorage,
+struct OsnmaData<S: StaticStorage> {
+    navmessage: CollectNavMessage<S>,
+    mack: MackStorage<S>,
     pubkey: VerifyingKey,
     key: Option<Key<Validated>>,
     only_slowmac: bool,
 }
 
-impl Osnma {
-    pub fn from_pubkey(pubkey: VerifyingKey, only_slowmac: bool) -> Osnma {
+impl<S: StaticStorage> Osnma<S> {
+    pub fn from_pubkey(pubkey: VerifyingKey, only_slowmac: bool) -> Osnma<S> {
         Osnma {
             subframe: CollectSubframe::new(),
             data: OsnmaDsm {
@@ -76,7 +77,7 @@ impl Osnma {
     }
 }
 
-impl OsnmaDsm {
+impl<S: StaticStorage> OsnmaDsm<S> {
     fn process_subframe(
         &mut self,
         hkroot: &HkrootMessage,
@@ -99,7 +100,7 @@ impl OsnmaDsm {
     }
 }
 
-impl OsnmaData {
+impl<S: StaticStorage> OsnmaData<S> {
     fn process_dsm(&mut self, dsm: &[u8], nma_header: NmaHeader) {
         // TODO: handle DSM-PKR
         let dsm_kroot = DsmKroot(dsm);
