@@ -82,7 +82,7 @@ impl CollectNavMessage {
         Self::check_svn(svn);
         let item = &self.ced_and_status[self.find_gst(gst)?][svn - 1];
         if !item.stale && item.all_valid() {
-            Some(&item.bits()[..549])
+            Some(item.message_bits())
         } else {
             None
         }
@@ -101,7 +101,7 @@ impl CollectNavMessage {
     pub fn timing_parameters(&self, gst: Gst) -> Option<&BitSlice> {
         let item = &self.timing_parameters[self.find_gst(gst)?];
         if item.all_valid() {
-            Some(&item.bits()[..161])
+            Some(item.message_bits())
         } else {
             None
         }
