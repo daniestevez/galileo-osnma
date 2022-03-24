@@ -1,0 +1,15 @@
+[package]
+name = "osnma-longan-nano-client"
+version = "0.1.0"
+edition = "2021"
+authors = ["Daniel Estevez <daniel@destevez.net>"]
+description = "Galileo OSNMA demo in a Longan Nano board (serial port client)"
+license = "MIT OR Apache-2.0"
+
+publish = false
+
+[dependencies]
+hex = "0.4"
+galileo-osnma = { path = "..", features = ["galmon"] }
+serialport = "4.0"
+

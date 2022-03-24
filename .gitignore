@@ -2,3 +2,6 @@
 /galmon-osnma/target
 /Cargo.lock
 *~
+/osnma-longan-nano/pubkey.pem
+/osnma-longan-nano/target
+/osnma-longan-nano-client/target
