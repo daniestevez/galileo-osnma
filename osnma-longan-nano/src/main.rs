@@ -55,8 +55,8 @@ impl Board {
                 let c = block!(self.rx.read()).unwrap();
                 if c != 0xa {
                     // not LF
+                    break c;
                 }
-                break c;
             };
             if c == 0xd {
                 // CR
