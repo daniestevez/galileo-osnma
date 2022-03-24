@@ -3,6 +3,7 @@ use crate::gst::Gst;
 use crate::tesla::Key;
 use crate::types::{BitSlice, InavWord, StaticStorage, Validated, NUM_SVNS};
 use bitvec::prelude::*;
+use core::num::NonZeroU8;
 use generic_array::GenericArray;
 use typenum::Unsigned;
 
@@ -11,7 +12,7 @@ const MIN_AUTHBITS: u16 = 80;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct CollectNavMessage<S: StaticStorage> {
-    ced_and_status: GenericArray<[CedAndStatus; NUM_SVNS], S::NavMessageDepth>,
+    ced_and_status: GenericArray<CedAndStatus, S::NavMessageDepthSats>,
     timing_parameters: GenericArray<TimingParameters, S::NavMessageDepth>,
     gsts: GenericArray<Option<Gst>, S::NavMessageDepth>,
     write_pointer: usize,
@@ -40,19 +41,10 @@ impl<'a> NavMessageData<'a> {
 
 impl<S: StaticStorage> CollectNavMessage<S> {
     pub fn new() -> CollectNavMessage<S> {
-        let n = S::NavMessageDepth::to_usize();
-        let ced_and_status = GenericArray::from_exact_iter(
-            core::iter::repeat([CedAndStatus::new(); NUM_SVNS]).take(n),
-        )
-        .unwrap();
-        let timing_parameters =
-            GenericArray::from_exact_iter(core::iter::repeat(TimingParameters::new()).take(n))
-                .unwrap();
-        let gsts = GenericArray::from_exact_iter(core::iter::repeat(None).take(n)).unwrap();
         CollectNavMessage {
-            ced_and_status,
-            timing_parameters,
-            gsts: gsts,
+            ced_and_status: GenericArray::default(),
+            timing_parameters: GenericArray::default(),
+            gsts: GenericArray::default(),
             write_pointer: 0,
         }
     }
@@ -71,8 +63,24 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         Self::check_svn(svn);
         let gst = gst.gst_subframe();
         self.adjust_write_pointer(gst);
-        let svn_idx = svn - 1;
-        self.ced_and_status[self.write_pointer][svn_idx].feed(word);
+
+        // Search for best location to place this SVN
+        let svn_u8 = NonZeroU8::new(svn.try_into().unwrap()).unwrap();
+        let ced = self
+            .current_ced_as_mut()
+            .iter_mut()
+            .max_by_key(|x| match x.svn {
+                Some(s) if s == svn_u8 => u16::from(u8::MAX) + 2,
+                None => u16::from(u8::MAX) + 1,
+                _ => u16::from(x.stale_counter),
+            })
+            .unwrap();
+        log::trace!(
+            "selected store with SVN {:?} and stale counter {}",
+            ced.svn,
+            ced.stale_counter
+        );
+        ced.feed(word, svn_u8);
         self.timing_parameters[self.write_pointer].feed(word, svn);
     }
 
@@ -80,7 +88,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         // If write pointer points to a valid GST which is distinct
         // from the current, we advance the write pointer and copy
         // the old CED and status to the new write pointer location.
-        // We mark the copy as stale.
+        // We increase the stale counter of the copy.
         // The timing parameters are not copied. Since all the satellites
         // transmit this information, it is very likely that in this subframe
         // we are able to gather the two required words.
@@ -93,35 +101,50 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                     g
                 );
                 let new_pointer = (self.write_pointer + 1) % S::NavMessageDepth::USIZE;
-                self.ced_and_status[new_pointer] = self.ced_and_status[self.write_pointer];
+                self.ced_and_status.copy_within(
+                    self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS,
+                    new_pointer * S::NUM_SATS,
+                );
                 self.timing_parameters[new_pointer].reset();
                 self.write_pointer = new_pointer;
-                self.mark_stale();
+                self.increase_stale_counter();
             }
         }
         self.gsts[self.write_pointer] = Some(gst);
     }
 
-    fn mark_stale(&mut self) {
-        for ced in self.ced_and_status[self.write_pointer].iter_mut() {
-            ced.stale = true;
+    fn current_ced_as_mut(&mut self) -> &mut [CedAndStatus] {
+        &mut self.ced_and_status
+            [self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS]
+    }
+
+    fn increase_stale_counter(&mut self) {
+        for ced in self.current_ced_as_mut().iter_mut() {
+            ced.stale_counter = ced.stale_counter.saturating_add(1);
         }
     }
 
     pub fn get_ced_and_status(&self, svn: usize) -> Option<NavMessageData> {
         Self::check_svn(svn);
-        let svn_idx = svn - 1;
+        let svn_u8 = NonZeroU8::new(svn.try_into().unwrap()).unwrap();
         // Search in order of decreasing Gst
         for j in 0..S::NavMessageDepth::USIZE {
-            let idx =
+            let gst_idx =
                 (S::NavMessageDepth::USIZE + self.write_pointer - j) % S::NavMessageDepth::USIZE;
-            let item = &self.ced_and_status[idx][svn_idx];
-            if !item.stale && item.all_valid() && item.authbits >= MIN_AUTHBITS {
-                return Some(NavMessageData {
-                    data: item.message_bits(),
-                    authbits: item.authbits,
-                    gst: self.gsts[idx].unwrap(),
-                });
+            for item in
+                self.ced_and_status[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS].iter()
+            {
+                if item.svn == Some(svn_u8)
+                    && item.stale_counter == 0
+                    && item.all_valid()
+                    && item.authbits >= MIN_AUTHBITS
+                {
+                    return Some(NavMessageData {
+                        data: item.message_bits(),
+                        authbits: item.authbits,
+                        gst: self.gsts[gst_idx].unwrap(),
+                    });
+                }
             }
         }
         None
@@ -146,13 +169,16 @@ impl<S: StaticStorage> CollectNavMessage<S> {
 
     fn ced_and_status_as_mut(&mut self, svn: usize, gst: Gst) -> Option<&mut CedAndStatus> {
         Self::check_svn(svn);
-        let idx = self.find_gst(gst)?;
-        let item = &mut self.ced_and_status[idx][svn - 1];
-        if !item.stale && item.all_valid() {
-            Some(item)
-        } else {
-            None
+        let svn_u8 = NonZeroU8::new(svn.try_into().unwrap()).unwrap();
+        let gst_idx = self.find_gst(gst)?;
+        for item in
+            self.ced_and_status[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS].iter_mut()
+        {
+            if item.svn == Some(svn_u8) && item.stale_counter == 0 && item.all_valid() {
+                return Some(item);
+            }
         }
+        None
     }
 
     fn timing_parameters_as_mut(&mut self, gst: Gst) -> Option<&mut TimingParameters> {
@@ -335,7 +361,8 @@ const CED_AND_STATUS_WORDS: usize = 5;
 pub struct CedAndStatus {
     data: [u8; CED_AND_STATUS_BYTES],
     valid: [bool; CED_AND_STATUS_WORDS],
-    stale: bool,
+    svn: Option<NonZeroU8>,
+    stale_counter: u8,
     authbits: u16,
 }
 
@@ -367,11 +394,10 @@ macro_rules! impl_common {
                 }
             }
 
-            // This is required because CedAndStatus::reset is never called
-            #[allow(dead_code)]
             fn reset(&mut self) {
-                self.valid = [false; $num_words];
+                self.valid.fill(false);
                 self.authbits = 0;
+                $(self.$id = $val);*
             }
 
             fn bits(&self) -> &BitSlice {
@@ -396,6 +422,12 @@ macro_rules! impl_common {
                 self.authbits = self.authbits.saturating_add(tag.len().try_into().unwrap());
             }
         }
+
+        impl Default for $s {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
     };
 }
 
@@ -404,7 +436,8 @@ impl_common!(
     CED_AND_STATUS_BYTES,
     CED_AND_STATUS_WORDS,
     549,
-    stale <= true
+    svn <= None,
+    stale_counter <= u8::MAX
 );
 impl_common!(
     TimingParameters,
@@ -414,7 +447,16 @@ impl_common!(
 );
 
 impl CedAndStatus {
-    fn feed(&mut self, word: &InavWord) {
+    fn feed(&mut self, word: &InavWord, svn: NonZeroU8) {
+        match self.svn {
+            Some(s) if s == svn => (),
+            None => self.svn = Some(svn),
+            _ => {
+                self.reset();
+                self.svn = Some(svn);
+            }
+        };
+
         let word = BitSlice::from_slice(word);
         let word_type = word[..6].load_be::<u8>();
         let iodnav = word[6..16].load_be::<u16>();
@@ -445,9 +487,10 @@ impl CedAndStatus {
         // We mark as not stale regardless of whether we need
         // overwrite with new data or whether the new data is
         // equal to the old.
-        self.stale = false;
+        self.stale_counter = 0;
+        let valid = self.valid[idx];
         let dest = &mut self.bits_as_mut()[dest_range];
-        if dest != source {
+        if !valid || dest != source {
             dest.copy_from_bitslice(source);
             self.authbits = 0;
             self.valid[idx] = true;

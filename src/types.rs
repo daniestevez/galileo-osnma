@@ -1,3 +1,4 @@
+use crate::mack::Mack;
 use crate::navmessage::{CedAndStatus, TimingParameters};
 use crate::Gst;
 use generic_array::ArrayLength;
@@ -35,10 +36,10 @@ pub trait StaticStorageTypenum:
     + core::fmt::Debug
     + core::cmp::PartialEq
     + core::cmp::Eq
-    + ArrayLength<[CedAndStatus; NUM_SVNS]>
+    + ArrayLength<CedAndStatus>
     + ArrayLength<TimingParameters>
     + ArrayLength<Option<Gst>>
-    + ArrayLength<[Option<MackMessage>; NUM_SVNS]>
+    + ArrayLength<Option<Mack>>
 {
 }
 
@@ -47,38 +48,47 @@ impl<T> StaticStorageTypenum for T where
         + core::fmt::Debug
         + core::cmp::PartialEq
         + core::cmp::Eq
-        + ArrayLength<[CedAndStatus; NUM_SVNS]>
+        + ArrayLength<CedAndStatus>
         + ArrayLength<TimingParameters>
         + ArrayLength<Option<Gst>>
-        + ArrayLength<[Option<MackMessage>; NUM_SVNS]>
+        + ArrayLength<Option<Mack>>
 {
 }
 
 pub trait StaticStorage {
+    const NUM_SATS: usize;
     // Number of subframes to store.
     // This should usually be 1 more than the DEPTH of the MackStorage, because tags
     // in the MACK refer to the previous subframe.
     type NavMessageDepth: StaticStorageTypenum;
+    type NavMessageDepthSats: StaticStorageTypenum;
     // Number of subframes to store.
     // For full storage this is 12 because we need to store the current subframe,
     // the previous subframe because its tags correspond to the
     // key in the current subframe, and also the 10 previous subframes
     // to this to acccount for Slow MAC.
     type MackDepth: StaticStorageTypenum;
+    type MackDepthSats: StaticStorageTypenum;
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct FullStorage {}
 
 impl StaticStorage for FullStorage {
+    const NUM_SATS: usize = 36;
     type NavMessageDepth = typenum::U13;
+    type NavMessageDepthSats = typenum::U468;
     type MackDepth = typenum::U12;
+    type MackDepthSats = typenum::U432;
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-pub struct NoSlowMacStorage {}
+pub struct SmallStorage {}
 
-impl StaticStorage for NoSlowMacStorage {
+impl StaticStorage for SmallStorage {
+    const NUM_SATS: usize = 12;
     type NavMessageDepth = typenum::U3;
+    type NavMessageDepthSats = typenum::U36;
     type MackDepth = typenum::U2;
+    type MackDepthSats = typenum::U24;
 }

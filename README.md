@@ -16,9 +16,10 @@ the authenticity of the navigation data.
 
 galileo-osnma does not require the Rust Standard library (it can be built with
 `no_std`), allocates all its data statically on the stack, and has a relatively
-small memory footprint for the data (~65 KiB if Slow MAC is used, and ~16 KiB if
-Slow MAC is not used). This makes it possible to use the library in some
-embedded microcontrollers.
+small memory footprint for the data (~65 KiB if Slow MAC is used and data for 36
+satellites in parallel is stored, and ~7 KiB if Slow MAC is not used and data
+for only 12 satellites in parallel is stored). This makes it possible to use the
+library in some embedded microcontrollers.
 
 ## Documentation
 
