@@ -59,6 +59,10 @@ jobs:
         working-directory: osnma-longan-nano-client
     steps:
     - uses: actions/checkout@v2
+    - name: Install libudev
+      run: |
+        sudo apt-get update
+        sudo apt-get install libudev-dev
     - name: Format
       run: cargo fmt --check
     - name: Clippy
