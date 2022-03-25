@@ -1,7 +1,16 @@
+//! Navigation message storage and handling.
+//!
+//! This module contains the [`CollectNavMessage`] struct, which is used to
+//! classify and store navigation message data. This is used internally by
+//! the [`Osnma`](crate::Osnma) black box, but it can also be used directly
+//! if finer control is needed.
+
 use crate::bitfields::{Adkd, Mack};
 use crate::gst::Gst;
+use crate::storage::StaticStorage;
 use crate::tesla::Key;
-use crate::types::{BitSlice, InavWord, StaticStorage, Validated, NUM_SVNS};
+use crate::types::{BitSlice, InavWord, NUM_SVNS};
+use crate::validation::Validated;
 use bitvec::prelude::*;
 use core::num::NonZeroU8;
 use generic_array::GenericArray;
@@ -10,6 +19,10 @@ use typenum::Unsigned;
 // Minimum equivalent tag for authentication. Currently defined as 80 bits
 const MIN_AUTHBITS: u16 = 80;
 
+/// Navigation message store.
+///
+/// This struct is used to store and classify the navigation message data, and
+/// to authenticate it using MACK tags and their corresponding TESLA keys.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct CollectNavMessage<S: StaticStorage> {
     ced_and_status: GenericArray<CedAndStatus, S::NavMessageDepthSats>,
@@ -18,6 +31,11 @@ pub struct CollectNavMessage<S: StaticStorage> {
     write_pointer: usize,
 }
 
+/// Authenticated navigation message data.
+///
+/// Gives access to some piece of navigation message data that has been
+/// successfully authenticated with OSNMA. This struct refers to data
+/// that is owned by a [`CollectNavMessage`].
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct NavMessageData<'a> {
     data: &'a BitSlice,
@@ -26,20 +44,30 @@ pub struct NavMessageData<'a> {
 }
 
 impl<'a> NavMessageData<'a> {
+    /// Returns the navigation data as a `BitSlice`.
     pub fn data(&'_ self) -> &'a BitSlice {
         self.data
     }
 
+    /// Returns the number of authentication bits corresponding to this data.
+    ///
+    /// This indicates the sum of the length in bits of all the tags that have
+    /// authenticated this message.
     pub fn authbits(&self) -> u16 {
         self.authbits
     }
 
+    /// Returns the GST that corresponds to this navigation data.
+    ///
+    /// The GST is defined as the starting GST of the subframe where this
+    /// navigation data was transmitted.
     pub fn gst(&self) -> Gst {
         self.gst
     }
 }
 
 impl<S: StaticStorage> CollectNavMessage<S> {
+    /// Constructs a new, empty navigation message storage.
     pub fn new() -> CollectNavMessage<S> {
         CollectNavMessage {
             ced_and_status: GenericArray::default(),
@@ -53,6 +81,16 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         assert!((1..=NUM_SVNS).contains(&svn));
     }
 
+    /// Feed an INAV word into the navigation message storage.
+    ///
+    /// The `svn` parameter corresponds to the SVN of the satellite transmitting
+    /// the INAV word. This should be obtained from the PRN used for tracking.
+    ///
+    /// The `gst` parameter gives the GST at the start of the INAV page transmission.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `svn` is not a number between 1 and 36.
     pub fn feed(&mut self, word: &InavWord, svn: usize, gst: Gst) {
         log::trace!(
             "feeding INAV word = {:02x?} for svn = E{:02} GST {:?}",
@@ -124,6 +162,17 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         }
     }
 
+    /// Try to get authenticated CED and health status data for a satellite.
+    ///
+    /// This will try to retrieve the most recent authenticated CED and health
+    /// status data (ADKD=0 and 12) for the satellite with SVN `svn` that is
+    /// available in the OSNMA storage. If the storage does not contain any
+    /// authenticated CED and health status data for this SVN, this returns
+    /// `None`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `svn` is not a number between 1 and 36.
     pub fn get_ced_and_status(&self, svn: usize) -> Option<NavMessageData> {
         Self::check_svn(svn);
         let svn_u8 = NonZeroU8::new(svn.try_into().unwrap()).unwrap();
@@ -150,6 +199,12 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         None
     }
 
+    /// Try to get authenticated timing parameters for the Galileo constellation.
+    ///
+    /// This will try to retrieve the most Galileo constellation timing
+    /// parameters data (ADKD=4) `svn` that is available in the OSNMA
+    /// storage. If the storage does not contain any authenticated timing
+    /// parameters data, this returns `None`.
     pub fn get_timing_parameters(&self) -> Option<NavMessageData> {
         // Search in order of decreasing Gst
         for j in 0..S::NavMessageDepth::USIZE {
@@ -199,6 +254,19 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             .find_map(|(j, &g)| if g == Some(gst) { Some(j) } else { None })
     }
 
+    /// Process a MACK message.
+    ///
+    /// This processes a MACK message, authenticating stored navigation data as
+    /// possible. The `key` should be the TESLA key with which the tags in the
+    /// MACK message `mack` have been generated (recall that this key is
+    /// transmitted in the next subframe with respect to the MACK message). The
+    /// `prna` is the authenticating PRN, which is the SVN that has transmitted
+    /// the MACK message. The `gst_mack` parameter should be the GST
+    /// corresponding to the start of the subframe when the MACK message was
+    /// transmitted.
+    ///
+    /// This function ignores the ADKD=12 (Slow MAC) tags in the MACK message,
+    /// since they do not correspond to `key`.
     pub fn process_mack(
         &mut self,
         mack: Mack<Validated>,
@@ -272,6 +340,19 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         }
     }
 
+    /// Process the Slow MAC (ADKD=12) tags in a MACK message.
+    ///
+    /// This processes a MACK message, authenticating stored navigation data as
+    /// possible using the Slow MAC tags. The `key` should be the TESLA key with
+    /// which the Slow MAC tags in the MACK message `mack` have been generated
+    /// (recall that this key is transmitted 11 subframes after the MACK
+    /// message). The `prna` is the authenticating PRN, which is the SVN that
+    /// has transmitted the MACK message. The `gst_mack` parameter should be the
+    /// GST corresponding to the start of the subframe when the MACK message was
+    /// transmitted.
+    ///
+    /// This function ignores all the other tags in the MACK message, since they
+    /// do not correspond to `key`.
     pub fn process_mack_slowmac(
         &mut self,
         mack: Mack<Validated>,
@@ -354,10 +435,12 @@ impl<S: StaticStorage> Default for CollectNavMessage<S> {
     }
 }
 
-pub const CED_AND_STATUS_BYTES: usize = 69;
+const CED_AND_STATUS_BYTES: usize = 69;
 const CED_AND_STATUS_WORDS: usize = 5;
 
+#[doc(hidden)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+// This is pub only because it appears in the definition of StaticStorageTypenum
 pub struct CedAndStatus {
     data: [u8; CED_AND_STATUS_BYTES],
     valid: [bool; CED_AND_STATUS_WORDS],
@@ -366,10 +449,12 @@ pub struct CedAndStatus {
     authbits: u16,
 }
 
-pub const TIMING_PARAMETERS_BYTES: usize = 21;
+const TIMING_PARAMETERS_BYTES: usize = 21;
 const TIMING_PARAMETERS_WORDS: usize = 2;
 
+#[doc(hidden)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+// This is pub only because it appears in the definition of StaticStorageTypenum
 pub struct TimingParameters {
     data: [u8; TIMING_PARAMETERS_BYTES],
     valid: [bool; TIMING_PARAMETERS_WORDS],

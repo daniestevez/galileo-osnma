@@ -1,8 +1,7 @@
 use galileo_osnma::galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport};
 use galileo_osnma::{
-    gst::Wn,
     types::{InavWord, OsnmaDataMessage},
-    Gst,
+    Gst, Wn,
 };
 use std::error::Error;
 use std::io::{BufRead, BufReader};

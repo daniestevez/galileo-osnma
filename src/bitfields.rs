@@ -1,7 +1,13 @@
-use crate::gst::Gst;
-use crate::gst::{Towh, Wn};
+//! Message bit fields.
+//!
+//! This module contains structures that give acccess to each of the fields in
+//! the messages used by OSNMA. As a general rule, the structures are a wrapper
+//! over a `&[u8]` or `&[u8; N]`.
+
 use crate::tesla::{AdkdCheckError, Key};
-use crate::types::{BitSlice, MackMessage, NotValidated, Validated, MACK_MESSAGE_BYTES};
+use crate::types::{BitSlice, MackMessage, Towh, MACK_MESSAGE_BYTES};
+use crate::validation::{NotValidated, Validated};
+use crate::{Gst, Wn};
 use bitvec::prelude::*;
 use core::fmt;
 use p256::ecdsa::{
@@ -10,24 +16,52 @@ use p256::ecdsa::{
 };
 use sha2::{Digest, Sha256};
 
+/// NMA header.
+///
+/// The NMA header found in the first byte of an HKROOT message.
+/// See Figure 4 in the
+/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct NmaHeader<'a>(pub &'a [u8; 1]);
+pub struct NmaHeader<'a>(
+    /// Reference to an array containing the 1-byte header data.
+    pub &'a [u8; 1],
+);
 
+/// Status of the NMA chain.
+///
+/// This represents the values of the NMAS field of the [`NmaHeader`]
+/// as defined in Section 3.1.1 of the
+/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum NmaStatus {
+    /// Reserved value (NMAS = 0),
     Reserved,
+    /// Test (NMAS = 1),
     Test,
+    /// Operational (NMAS = 2).
     Operational,
+    /// Don't use (NMAS = 3).
     DontUse,
 }
 
+/// Chain and Public Key status.
+///
+/// This represents the valus of the CPKS field of the [`NmaHeader`]
+/// as defined in Section 3.1.3 of the
+/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ChainAndPubkeyStatus {
+    /// Reserved value (CPKS = 0, 6, 7).
     Reserved,
+    /// Nominal (CPKS = 1).
     Nominal,
+    /// End of chain (EOC) (CPKS = 2).
     EndOfChain,
+    /// Chain revoked (CREV) (CPKS = 3).
     ChainRevoked,
+    /// New public key (NPK) (CPKS = 4).
     NewPublicKey,
+    /// Public key revoked (PKREV) (CPKS = 5).
     PublicKeyRevoked,
 }
 
@@ -36,6 +70,7 @@ impl<'a> NmaHeader<'a> {
         BitSlice::from_slice(self.0)
     }
 
+    /// Gives the value of the NMAS (NMA status) field.
     pub fn nma_status(&self) -> NmaStatus {
         match self.bits()[..2].load_be::<u8>() {
             0 => NmaStatus::Reserved,
@@ -46,10 +81,12 @@ impl<'a> NmaHeader<'a> {
         }
     }
 
+    /// Gives the value of the CID (chain ID) field.
     pub fn chain_id(&self) -> u8 {
         self.bits()[2..4].load_be::<u8>()
     }
 
+    /// Gives the value of the CPKS (chain and public key status) field.
     pub fn chain_and_pubkey_status(&self) -> ChainAndPubkeyStatus {
         match self.bits()[4..7].load_be::<u8>() {
             0 | 6 | 7 => ChainAndPubkeyStatus::Reserved,
@@ -73,12 +110,32 @@ impl fmt::Debug for NmaHeader<'_> {
     }
 }
 
+/// DSM header.
+///
+/// The DSM header found in the second byte of an HKROOT message.
+/// See Figure 5 in the
+/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct DsmHeader<'a>(pub &'a [u8; 1]);
+pub struct DsmHeader<'a>(
+    /// Reference to an array containing the 1-byte header data.
+    pub &'a [u8; 1],
+);
 
+/// Type of the DSM message.
+///
+/// This is derived from the DSM ID field according to Section 3.2.1.1 in the
+/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum DsmType {
+    /// DSM-KROOT.
+    ///
+    /// This message is used to transmit the TESLA root key. It corresponds to
+    /// DSM IDs 0 to 11.
     Kroot,
+    /// DSM-PKR.
+    ///
+    /// This message is used to transmit a new ECDSA public key. It corresponds
+    /// to DSM IDs 12 to 15.
     Pkr,
 }
 
@@ -87,14 +144,17 @@ impl<'a> DsmHeader<'a> {
         BitSlice::from_slice(self.0)
     }
 
+    /// Gives the value of the DSM ID field.
     pub fn dsm_id(&self) -> u8 {
         self.bits()[..4].load_be()
     }
 
+    /// Gives the value of the DSM block ID field.
     pub fn dsm_block_id(&self) -> u8 {
         self.bits()[4..8].load_be()
     }
 
+    /// Gives the type of DSM message, according to the DSM ID field.
     pub fn dsm_type(&self) -> DsmType {
         if self.dsm_id() >= 12 {
             DsmType::Pkr
@@ -113,26 +173,61 @@ impl fmt::Debug for DsmHeader<'_> {
     }
 }
 
+/// DSM-KROOT message.
+///
+/// The DSM-KROOT message, as defined in Figure 7 of the
+/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct DsmKroot<'a>(pub &'a [u8]);
+pub struct DsmKroot<'a>(
+    /// Reference to a slice containing the DSM-KROOT message data.
+    ///
+    /// # Panics
+    ///
+    /// This slice should be long enough to contain the full DSM-KROOT
+    /// message. Otherwise the methods of `DsmKroot` may panic.
+    pub &'a [u8],
+);
 
+/// Hash function.
+///
+/// This represents the values of the Hash Function (HF) field of the DSM-KROOT
+/// message. See Table 8 in the
+/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum HashFunction {
+    /// SHA-256 (HF = 0).
     Sha256,
+    /// SHA3-256 (HF = 2).
     Sha3_256,
+    /// Reserved value (HF = 1, 3).
     Reserved,
 }
 
+/// MAC function.
+///
+/// This represents the values of the MAC Function (MF) field of the DSM-KROOT
+/// message. See Table 9 in the
+/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum MacFunction {
+    /// HMAC-SHA-256 (MF = 0).
     HmacSha256,
+    /// CMAC-AES (MF = 1).
     CmacAes,
+    /// Reserved value (MF = 2, 3).
     Reserved,
 }
 
+/// ECDSA function.
+///
+/// This represents the key types available for ECDSA signatures. See Table 15
+/// in the
+/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum EcdsaFunction {
+    /// ECDSA P-256/SHA-256.
     P256Sha256,
+    /// ECDSA P-521/SHA-512
     P521Sha512,
 }
 
@@ -141,6 +236,13 @@ impl<'a> DsmKroot<'a> {
         BitSlice::from_slice(self.0)
     }
 
+    /// Gives the number of DSM-KROOT blocks.
+    ///
+    /// The number is computed according to the value of the NB_DK field and
+    /// Table 7 in the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    ///
+    /// If the NB_DK field contains a reserved value, `None` is returned.
     pub fn number_of_blocks(&self) -> Option<usize> {
         match self.bits()[..4].load_be::<u8>() {
             1 => Some(7),
@@ -155,14 +257,17 @@ impl<'a> DsmKroot<'a> {
         }
     }
 
+    /// Gives the value of the PKID (public key ID) field.
     pub fn public_key_id(&self) -> u8 {
         self.bits()[4..8].load_be::<u8>()
     }
 
+    /// Gives the value of the CIDKR (KROOT chain ID) field.
     pub fn kroot_chain_id(&self) -> u8 {
         self.bits()[8..10].load_be::<u8>()
     }
 
+    /// Gives the value of the hash function field.
     pub fn hash_function(&self) -> HashFunction {
         match self.bits()[12..14].load_be::<u8>() {
             0 => HashFunction::Sha256,
@@ -171,6 +276,7 @@ impl<'a> DsmKroot<'a> {
         }
     }
 
+    /// Gives the value of the MAC function field.
     pub fn mac_function(&self) -> MacFunction {
         match self.bits()[14..16].load_be::<u8>() {
             0 => MacFunction::HmacSha256,
@@ -179,6 +285,13 @@ impl<'a> DsmKroot<'a> {
         }
     }
 
+    /// Gives the TESLA key size in bits.
+    ///
+    /// The size is computed according to the value of the KS field and
+    /// Table 10 in the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    ///
+    /// If the KS field contains a reserved value, `None` is returned.
     pub fn key_size(&self) -> Option<usize> {
         // note that all the key sizes are a multiple of 8 bits
         let size = match self.bits()[16..20].load_be::<u8>() {
@@ -199,6 +312,13 @@ impl<'a> DsmKroot<'a> {
         size
     }
 
+    /// Gives the MAC tag size in bits.
+    ///
+    /// The size is computed according to the value of the TS field and
+    /// Table 11 in the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    ///
+    /// If the TS field contains a reserved value, `None` is returned.
     pub fn tag_size(&self) -> Option<usize> {
         match self.bits()[20..24].load_be::<u8>() {
             5 => Some(20),
@@ -210,22 +330,41 @@ impl<'a> DsmKroot<'a> {
         }
     }
 
+    /// Gives the value of the MACLT (MAC look-up table) field.
     pub fn mac_lookup_table(&self) -> u8 {
         self.bits()[24..32].load_be()
     }
 
+    /// Gives the KROOT week number.
+    ///
+    /// This is the value of the WNK field.
     pub fn kroot_wn(&self) -> Wn {
         self.bits()[36..48].load_be()
     }
 
+    /// Gives the KROOT time of week in hours.
+    ///
+    /// This is the value of the TOWHK field.
     pub fn kroot_towh(&self) -> Towh {
         self.bits()[48..56].load_be()
     }
 
+    /// Gives the value of the random pattern alpha.
+    ///
+    /// The random pattern alpha is a 48-bit value. Here it is given in a `u64`.
     pub fn alpha(&self) -> u64 {
         self.bits()[56..104].load_be()
     }
 
+    /// Returns a slice reference to the KROOT in the DSM-KROOT message.
+    ///
+    /// This is the contents of the KROOT field. The length of the returned slice
+    /// depends on the TESLA key size.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the key size field in the DSM-KROOT message contains a reserved
+    /// value.
     pub fn kroot(&self) -> &[u8] {
         let size = self
             .key_size()
@@ -234,6 +373,15 @@ impl<'a> DsmKroot<'a> {
         &self.0[13..13 + size_bytes]
     }
 
+    /// Returns the ECDSA function used by this DSM-KROOT message.
+    ///
+    /// The ECDSA function is guessed from the size of the ECDSA signature
+    /// in the message.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ECDSA function cannot be guessed because the size of
+    /// the signature is neither 512 bits (for P-256) nor 1056 bits (for P-521).
     pub fn ecdsa_function(&self) -> EcdsaFunction {
         // Although the ICD is not clear about this, we can guess the
         // ECDSA function in use from the size of the DSM-KROOT
@@ -259,6 +407,15 @@ impl<'a> DsmKroot<'a> {
         }
     }
 
+    /// Returns a slice reference to the ECDSA signature in the DSM-KROOT message.
+    ///
+    /// This is the contents of the digital signature (DS) field. The length of
+    /// the returned slice depend on the ECDSA function in use.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ECDSA function cannot be guessed because the size of
+    /// the signature is neither 512 bits (for P-256) nor 1056 bits (for P-521).
     pub fn digital_signature(&self) -> &[u8] {
         let size = match self.ecdsa_function() {
             EcdsaFunction::P256Sha256 => 64,
@@ -268,6 +425,7 @@ impl<'a> DsmKroot<'a> {
         &self.0[start..start + size]
     }
 
+    /// Gives the contents of the DSM-KROOT padding (P_DK) field.
     pub fn padding(&self) -> &[u8] {
         let start = 13 + self.kroot().len() + self.digital_signature().len();
         &self.0[start..]
@@ -283,6 +441,13 @@ impl<'a> DsmKroot<'a> {
         (m, end)
     }
 
+    /// Checks the contents of the padding field.
+    ///
+    /// The contents are checked according to Eq. 7 in the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    ///
+    /// If the contents are correct, this returns `true`. Otherwise, this
+    /// returns `false`.
     pub fn check_padding(&self, nma_header: NmaHeader) -> bool {
         // maximum size is 209 bytes for the message and 132 bytes for
         // the P521Sha512 signature
@@ -302,7 +467,19 @@ impl<'a> DsmKroot<'a> {
         truncated == padding
     }
 
-    // By now we only support P256
+    /// Checks the ECDSA signature.
+    ///
+    /// This verifies that the ECDSA signature of the DSM-KROOT message is
+    /// correct. The algorithm in Section 6.3 of the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf)
+    /// is followed.
+    ///
+    /// Only P-256 signatures are supported.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the ECDSA signature cannot be serialized.
+    ///
     pub fn check_signature(&self, nma_header: NmaHeader, pubkey: &VerifyingKey) -> bool {
         let (message, size) = self.signature_message(nma_header);
         let message = &message[..size];

@@ -1,8 +1,8 @@
 use galileo_osnma::{
     galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport},
-    gst::Wn,
-    types::{BitSlice, FullStorage, NUM_SVNS},
-    Gst, Osnma,
+    storage::FullStorage,
+    types::{BitSlice, NUM_SVNS},
+    Gst, Osnma, Wn,
 };
 use p256::ecdsa::VerifyingKey;
 use spki::DecodePublicKey;

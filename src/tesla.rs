@@ -1,7 +1,7 @@
 use crate::bitfields::{self, Adkd, DsmKroot, Mack, NmaHeader, NmaStatus, Prnd, TagAndInfo};
 use crate::gst::{Gst, Tow};
-use crate::types::NUM_SVNS;
-use crate::types::{BitSlice, NotValidated, Validated};
+use crate::types::{BitSlice, NUM_SVNS};
+use crate::validation::{NotValidated, Validated};
 use aes::Aes128;
 use bitvec::prelude::*;
 use cmac::Cmac;

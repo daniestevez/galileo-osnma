@@ -1,9 +1,19 @@
+//! DSM message collection.
+//!
+//! This module contains the [`CollectDsm`] struct, which is used to collect all
+//! the DSM blocks of a DSM message and recompose the message.
+
 use crate::bitfields::{DsmHeader, DsmType};
 use crate::types::{DsmBlock, DSM_BLOCK_BYTES};
 
 const MAX_DSM_BLOCKS: usize = 16;
 const MAX_DSM_BYTES: usize = MAX_DSM_BLOCKS * DSM_BLOCK_BYTES;
 
+/// DSM message collector.
+///
+/// This struct collects DSM blocks and produces a complete DSM message when all
+/// the blocks of the message have been collected. Only one DSM message at a
+/// time can be collected.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct CollectDsm {
     dsm: [u8; MAX_DSM_BYTES],
@@ -14,6 +24,7 @@ pub struct CollectDsm {
 }
 
 impl CollectDsm {
+    /// Constructs a new, empty DSM collector.
     pub fn new() -> CollectDsm {
         CollectDsm {
             dsm: [0; MAX_DSM_BYTES],
@@ -29,6 +40,17 @@ impl CollectDsm {
         self.done = false;
     }
 
+    /// Feed a new block into the DSM collector.
+    ///
+    /// If this block completes the DSM message, the recomposed message will be
+    /// returned. Otherwise, this returns `None`. The DSM message is represented
+    /// as a slice of bytes, owned by the `CollectDsm`.
+    ///
+    /// The `header` parameter contains the DSM header of the block, and the
+    /// `block` parameter contains the 13-byte DSM block.
+    ///
+    /// If the block fed corresponds to a new DSM ID, the old data is discarded
+    /// and the collection for the new DSM begins.
     pub fn feed(&mut self, header: DsmHeader, block: &DsmBlock) -> Option<&[u8]> {
         log::trace!("feeding header = {:?}, block = {:02x?}", header, block);
         if header.dsm_id() != self.dsm_id || self.dsm_type.is_none() {

@@ -4,7 +4,8 @@
 use crate::pac::USART0;
 use core::fmt::Write;
 use galileo_osnma::{
-    types::{SmallStorage, HKROOT_SECTION_BYTES, INAV_WORD_BYTES, MACK_SECTION_BYTES, NUM_SVNS},
+    storage::SmallStorage,
+    types::{HKROOT_SECTION_BYTES, INAV_WORD_BYTES, MACK_SECTION_BYTES, NUM_SVNS},
     Gst, Osnma,
 };
 use longan_nano::hal::{pac, prelude::*, serial};

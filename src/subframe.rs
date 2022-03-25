@@ -1,3 +1,12 @@
+//! Subframe collection.
+//!
+//! This module contains the [`CollectSubframe`] struct, which is used to
+//! collect all the OSNMA data messages in a particular subframe in order to
+//! recompose the HKROOT and MACK messages of that subframe.
+//!
+//! The data for the 36 satellites in the Galileo constellation is collected in
+//! parallel.
+
 use crate::gst::{Gst, Tow, Wn};
 use crate::types::{
     HkrootMessage, HkrootSection, MackMessage, MackSection, OsnmaDataMessage, HKROOT_MESSAGE_BYTES,
@@ -7,6 +16,11 @@ use crate::types::{
 const WORDS_PER_SUBFRAME: u8 = 15;
 const SECONDS_PER_SUBFRAME: Tow = 30;
 
+/// Subframe collector.
+///
+/// This struct collects HKROOT and MACK sections from the OSNMA data in INAV
+/// words and produces the complete HKROOT and MACK messages transmitted in that
+/// subframe.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct CollectSubframe {
     hkroot: [HkrootMessage; NUM_SVNS],
@@ -17,6 +31,7 @@ pub struct CollectSubframe {
 }
 
 impl CollectSubframe {
+    /// Constructs a new, empty subframe collector.
     pub fn new() -> CollectSubframe {
         CollectSubframe {
             hkroot: [[0; HKROOT_MESSAGE_BYTES]; NUM_SVNS],
@@ -27,6 +42,24 @@ impl CollectSubframe {
         }
     }
 
+    /// Feed a new OSNMA data message into the subframe collector.
+    ///
+    /// If this data message completes the HKROOT and MACK message, the
+    /// corresponding messages, together with the GST at the start of the
+    /// subframe are returned. Otherwise, this returns `None`.
+    ///
+    /// The `svn` parameter corresponds to the SVN of the satellite transmitting
+    /// the INAV word. This should be obtained from the PRN used for tracking.
+    ///
+    /// The `gst` parameter gives the GST at the start of the INAV page
+    /// transmission. It the `gst` corresponds to a new subframe, the data for
+    /// the old subframe is discarded, and collection of data for a new subframe
+    /// begins. This assumes that the OSNMA data for different satellites is fed
+    /// in chronological order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `svn` is not a number between 1 and 36.
     pub fn feed(
         &mut self,
         osnma_data: &OsnmaDataMessage,

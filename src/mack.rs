@@ -1,9 +1,21 @@
+//! MACK message storage.
+//!
+//! This module contains [`MackStorage`], which is used to classify and store
+//! MACK messages until their corresponding TESLA keys are received.
+
 use crate::gst::Gst;
-use crate::types::{MackMessage, StaticStorage, NUM_SVNS};
+use crate::storage::StaticStorage;
+use crate::types::{MackMessage, NUM_SVNS};
 use core::num::NonZeroU8;
 use generic_array::GenericArray;
 use typenum::Unsigned;
 
+/// MACK message store.
+///
+/// This struct is a container that stores a history of MACK messages, so that
+/// they can be used when the TESLA keys corresponding to their tags become
+/// available. The storage size is statically allocated, and as new messages are
+/// stored, the older ones are deleted.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct MackStorage<S: StaticStorage> {
     macks: GenericArray<Option<Mack>, S::MackDepthSats>,
@@ -11,13 +23,16 @@ pub struct MackStorage<S: StaticStorage> {
     write_pointer: usize,
 }
 
+#[doc(hidden)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+// This is pub only because it appears in the definition of StaticStorageTypenum
 pub struct Mack {
     message: MackMessage,
     svn: NonZeroU8,
 }
 
 impl<S: StaticStorage> MackStorage<S> {
+    /// Creates a new, empty store of MACK messages.
     pub fn new() -> MackStorage<S> {
         MackStorage {
             macks: GenericArray::default(),
@@ -30,6 +45,21 @@ impl<S: StaticStorage> MackStorage<S> {
         assert!((1..=NUM_SVNS).contains(&svn));
     }
 
+    /// Store a MACK message.
+    ///
+    /// This will store the MACK message, potentially erasing the oldest messages
+    /// if new storage space is needed.
+    ///
+    /// The `svn` parameter corresponds to the SVN of the satellite transmitting
+    /// the MACK message. This should be obtained from the PRN used for
+    /// tracking.
+    ///
+    /// The `gst` parameter gives the GST at the start of the subframe when the
+    /// MACK message was transmitted.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `svn` is not a number between 1 and 36.
     pub fn store(&mut self, mack: &MackMessage, svn: usize, gst: Gst) {
         Self::check_svn(svn);
         self.adjust_write_pointer(gst);
@@ -80,6 +110,22 @@ impl<S: StaticStorage> MackStorage<S> {
         self.gsts[self.write_pointer] = Some(gst);
     }
 
+    /// Try to retrieve a MACK message.
+    ///
+    /// This will return a the MACK message for a particular SVN and timestamp if
+    /// it is available in the storage. If the MACK message is not available, this
+    /// returns `None`.
+    ///
+    /// The `svn` parameter corresponds to the SVN of the satellite transmitting
+    /// the MACK message. This should be obtained from the PRN used for
+    /// tracking.
+    ///
+    /// The `gst` parameter refers to the GST at the start of the subframe when the
+    /// MACK message was transmitted.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `svn` is not a number between 1 and 36.
     pub fn get(&self, svn: usize, gst: Gst) -> Option<&MackMessage> {
         Self::check_svn(svn);
         let gst_idx =
