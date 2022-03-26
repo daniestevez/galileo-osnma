@@ -11,8 +11,6 @@ keywords = ["galileo", "gnss", "osnma", "authentication", "cryptography"]
 categories = ["aerospace::space-protocols", "authentication", "embedded", "no-std"]
 exclude = ["/.github"]
 
-publish = false
-
 [features]
 # Galmon protobuf transport format support
 galmon = ["bytes", "prost", "prost-build", "std"]
