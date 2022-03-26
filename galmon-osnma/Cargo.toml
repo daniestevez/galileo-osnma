@@ -5,6 +5,10 @@ edition = "2021"
 authors = ["Daniel Estevez <daniel@destevez.net>"]
 description = "Galileo OSNMA processing of Galmon transport protocol"
 license = "MIT OR Apache-2.0"
+homepage = "https://github.com/daniestevez/galileo-osnma/"
+repository = "https://github.com/daniestevez/galileo-osnma/"
+keywords = ["galileo", "gnss", "osnma", "authentication", "cryptography"]
+categories = ["aerospace::space-protocols", "authentication", "embedded", "no-std"]
 default-run = "galmon-osnma"
 
 publish = false
