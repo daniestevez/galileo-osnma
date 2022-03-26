@@ -10,17 +10,45 @@
 //!
 //! This library provides an [`Osnma`] struct that implements the OSNMA
 //! authentication as a black box. A user can feed data from INAV pages into
-//! [`Osnma`] and then request authenticated navigation data.
+//! [`Osnma`] and then request authenticated navigation data.  Additionally,
+//! lower level functionalities of the OSNMA protocol are accessible in case
+//! finer control is needed.
 //!
-//! Additionally, lower level functionalities of the OSNMA protocol are
-//! accessible in case finer control is needed.
+//! This crate does not depend on `std` and can be used in small embedded
+//! microcontrollers. An example of this is given in the
+//! [osnma-longan-nano](https://github.com/daniestevez/galileo-osnma/tree/main/osnma-longan-nano)
+//! crate.
 //!
 //! ## Logging
 //!
 //! The galileo-osnma crate makes extensive use of the
 //! [log](https://docs.rs/log/latest/log/) crate to log events related to the
 //! processing of the messages and the cryptographic functions.
+//!
+//! ## Galmon integration
+//!
+//! When this crate is built with the `galmon` feature, a `galmon` module is
+//! available, which can be used to read data using the [Galmon transport
+//! protocol](https://github.com/berthubert/galmon#internals). The reader can
+//! be used to obtain INAV frames and OSNMA data from the
+//! [Galmon](https://github.com/berthubert/galmon) tools, such as `ubxtool`.
+//!
+//! An example of this functionality is given in
+//! [galmon-osnma](https://github.com/daniestevez/galileo-osnma/tree/main/galmon-osnma). This
+//! is a binary tool that reads data from the standard input using the Galmon
+//! transport protocol, and runs it through the [`Osnma`] black box, logging all
+//! the events that happen. See the
+//! [quick start instructions](https://github.com/daniestevez/galileo-osnma#quick-start-using-galmon)
+//! about how to use this tool.
+//!
+//! ## Features
+//!
+//! When built with the default features, the crate does not require
+//! `std`. Additionally, the crate supports the following features:
+//! * `galmon`. This enables support for reading the Galmon transport protocol
+//!    and requires `std`.
 
+#![warn(missing_docs)]
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 
 pub mod bitfields;

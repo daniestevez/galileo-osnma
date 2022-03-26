@@ -36,3 +36,6 @@ prost-build = { version = "0.9", optional = true }
 
 [dev-dependencies]
 hex-literal = "0.3"
+
+[package.metadata.docs.rs]
+features = ["galmon"]

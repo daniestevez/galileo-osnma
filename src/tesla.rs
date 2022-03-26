@@ -1,3 +1,11 @@
+//! TESLA keys and chain parameters.
+//!
+//! This module contains the [`Chain`] struct, that holds the parameters of a
+//! TESLA chain, and the [`Key`] struct, which contains a TESLA key and a copy
+//! of a `Chain` with the parameters of the corresponding chain. Keys can be
+//! used to validate other keys transmitted at later GSTs, and to validate MACK
+//! messages and authenticate the navigation data using the tags in a MACK message.
+
 use crate::bitfields::{self, Adkd, DsmKroot, Mack, NmaHeader, NmaStatus, Prnd, TagAndInfo};
 use crate::gst::{Gst, Tow};
 use crate::types::{BitSlice, NUM_SVNS};
@@ -13,6 +21,10 @@ use sha3::Sha3_256;
 
 const MAX_KEY_BYTES: usize = 32;
 
+/// TESLA chain parameters.
+///
+/// This struct stores the parameters of a TESLA chain. It is typically
+/// constructed from a DSK-KROOT message using [`Chain::from_dsm_kroot`].
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Chain {
     status: ChainStatus,
@@ -26,25 +38,54 @@ pub struct Chain {
     alpha: u64,
 }
 
+/// Chain status.
+///
+/// This gives the chain status for a valid TESLA chain. This roughly
+/// corresponds to the NMA status [`NmaStatus`](crate::bitfields::NmaStatus),
+/// but "don't use" and "reserved" are not considered valid statuses for a TESLA
+/// chain.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum ChainStatus {
+    /// Test (corresponds to NMAS = 1).
     Test,
+    /// Operational (corresponds to NMAS = 2).
     Operational,
 }
 
+/// Hash function.
+///
+/// This gives the hash function used by the TESLA chain. Its values correspond
+/// to those of [`bitfields::HashFunction`](crate::bitfields::HashFunction),
+/// minus the reserved value.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum HashFunction {
+    /// SHA-256.
     Sha256,
+    /// SHA3-256.
     Sha3_256,
 }
 
+/// MAC function.
+///
+/// This gives the MAC function used by the TESLA chain. Its values correspond
+/// to those of [`bitfields::MacFunction`](crate::bitfields::MacFunction),
+/// minus the reserved value.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum MacFunction {
+    /// HMAC-SHA-256.
     HmacSha256,
+    /// CMAC-AES.
     CmacAes,
 }
 
 impl Chain {
+    /// Extract the chain parameters from a DSM-KROOT message.
+    ///
+    /// The corresponding NMA header needs to be given, in order to extract the
+    /// [`ChainStatus`] from the NMA status field.
+    ///
+    /// If all the values in the DSM-KROOT message are acceptable a `Chain` is
+    /// returned. Otherwise, this returns an error indicating the problem.
     pub fn from_dsm_kroot(nma_header: NmaHeader, dsm_kroot: DsmKroot) -> Result<Chain, ChainError> {
         let status = match nma_header.nma_status() {
             NmaStatus::Test => ChainStatus::Test,
@@ -82,42 +123,76 @@ impl Chain {
         })
     }
 
+    /// Gives the status of the TESLA chain.
     pub fn chain_status(&self) -> ChainStatus {
         self.status
     }
 
+    /// Gives the chain ID of the TESLA chain.
     pub fn chain_id(&self) -> u8 {
         self.id
     }
 
+    /// Gives the hash function used by the TESLA chain.
     pub fn hash_function(&self) -> HashFunction {
         self.hash_function
     }
 
+    /// Gives the MAC function used by the TESLA chain.
     pub fn mac_function(&self) -> MacFunction {
         self.mac_function
     }
 
+    /// Gives the size of the TESLA keys in bytes.
+    ///
+    /// Note that all the possible TESLA key sizes are an integer number of
+    /// bytes.
     pub fn key_size_bytes(&self) -> usize {
         self.key_size_bytes
     }
 
+    /// Gives the size of the TESLA keys in bits.
     pub fn key_size_bits(&self) -> usize {
         self.key_size_bytes() * 8
     }
 
+    /// Gives the size of the tags in bits.
+    ///
+    /// Note that there are some possible tag sizes which are not an integer
+    /// number of bytes.
     pub fn tag_size_bits(&self) -> usize {
         self.tag_size_bits
     }
 
+    /// Gives the value of the MAC look-up table field.
     pub fn mac_lookup_table(&self) -> u8 {
         self.maclt
     }
 
+    /// Gives the value of the chain random parameter alpha.
     pub fn alpha(&self) -> u64 {
         self.alpha
     }
 
+    /// Try to validate the ADKD field of a Tag-Info section.
+    ///
+    /// This checks the ADKD against the MAC look-up table as described in Annex
+    /// C of the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// If the ADKD field is correct, this returns `Ok(())`. Otherwise, this
+    /// returns an error indicating what property is not satisfied.
+    ///
+    /// The `num_tag` parameter gives the index of the Tag-Info field. This is
+    /// the same index that is used in
+    /// [`Mack::tag_and_info`](crate::bitfields::Mack::tag_and_info). The first
+    /// Tag-Info field in a MACK message has `num_tag = 1`. The `prna` parameter
+    /// indicates the SVN of the satellite that transmitted the tag, and
+    /// `gst_tag` is the GST at the start of the subframe when the tag was
+    /// transmitted.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `num_tag` is zero.
     pub fn validate_adkd<V>(
         &self,
         num_tag: usize,
@@ -176,17 +251,34 @@ impl Chain {
     }
 }
 
+/// Errors produced during the extraction of the chain parameters.
+///
+/// This gives the errors that can happen during the extraction of the TESLA
+/// chain parameters from the DSM-KROOT message.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ChainError {
+    /// One of the fields holding information about the TESLA chain has a
+    /// reserved value.
     ReservedField,
+    /// The NMA status is set to "don't use".
     NmaDontUse,
 }
 
+/// Errors produced during the validation of an ADKD field.
+///
+/// This gives the errors that can happen during the validation of an ADKD field
+/// using [`Chain::validate_adkd`].
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum AdkdCheckError {
+    /// The tag number exceeds the number of tags in the MAC look-up table.
     InvalidTagNumber,
+    /// The value of the MAC look-up table in the TESLA chain is invalid.
     InvalidMaclt,
+    /// The ADKD does not match the value indicated in the corresponding MAC
+    /// look-up table entry.
     WrongAdkd,
+    /// The PRND field does not match the value indicated in the corresponding
+    /// MAC look-up table entry.
     WrongPrnd,
 }
 
@@ -196,6 +288,17 @@ enum AuthObject {
     Other,
 }
 
+/// TESLA key.
+///
+/// This struct holds a TESLA key, its corresponding GST (the GST at the start
+/// of the subframe when the key was transmitted in a MACK message), and the
+/// corresponding chain parameters.
+///
+/// The `V` type parameter is used to indicate the validation status of the
+/// key. A TESLA key is considered valid if it has been traced back to the ECDSA
+/// public key using the DSM-KROOT signature and TELA key derivations.  See
+/// [validation](crate::validation) for a description of validation type
+/// parameters.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Key<V> {
     data: [u8; MAX_KEY_BYTES],
@@ -204,15 +307,30 @@ pub struct Key<V> {
     _validated: V,
 }
 
+/// Errors produced during the validation of a TESLA key.
+///
+/// This gives the errors that can happen during the validation of TESLA key
+/// using another, already validated TESLA key, and [`Key::validate_key`].
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum ValidationError {
+    /// The key obtained via one-way function applications differs from the
+    /// expected key.
     WrongOneWayFunction,
+    /// Both keys belong to chains with different IDs.
     DifferentChain,
+    /// The GST of the key that whose validation is attempted is not later than
+    /// the GST of the key that is used for the validation.
     DoesNotFollow,
+    /// The distance between the GSTs of both keys is large enough that the
+    /// number of derivations to get from one to the other exceeds a certain threshold.
+    ///
+    /// The threshold is currently set to 3000 derivations, which corresponds to
+    /// a maximum GST difference of 25 hours.
     TooManyDerivations,
 }
 
 impl<V> Key<V> {
+    /// Gives the GST at the start of the subframe when the key was transmitted.
     pub fn gst_subframe(&self) -> Gst {
         self.gst_subframe
     }
@@ -221,6 +339,7 @@ impl<V> Key<V> {
         assert!(gst.is_subframe());
     }
 
+    /// Gives the chain parameters of the chain that the key belongs to.
     pub fn chain(&self) -> &Chain {
         &self.chain
     }
@@ -233,6 +352,15 @@ impl<V> Key<V> {
 }
 
 impl Key<NotValidated> {
+    /// Constructs a new key from a [`BitSlice`].
+    ///
+    /// This creates a new `Key` by copying the key data from a `BitSlice`. The
+    /// `gst` parameter should give the GST at the start of the subframe when
+    /// the key was transmitted. The key is marked as `NotValidated`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `slice.len()` does not match the key size indicated in `chain`.
     pub fn from_bitslice(slice: &BitSlice, gst: Gst, chain: &Chain) -> Key<NotValidated> {
         Self::check_gst(gst);
         let mut data = [0; MAX_KEY_BYTES];
@@ -245,6 +373,15 @@ impl Key<NotValidated> {
         }
     }
 
+    /// Constructs a new key from a slice of bytes.
+    ///
+    /// This creates a new `Key` by copying the key data from a `&[u8]`. The
+    /// `gst` parameter should give the GST at the start of the subframe when
+    /// the key was transmitted. The key is marked as `NotValidated`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `slice.len()` does not match the key size indicated in `chain`.
     pub fn from_slice(slice: &[u8], gst: Gst, chain: &Chain) -> Key<NotValidated> {
         Self::check_gst(gst);
         let mut data = [0; MAX_KEY_BYTES];
@@ -270,6 +407,22 @@ impl<V> Key<V> {
 }
 
 impl Key<Validated> {
+    /// Extracts the TESLA root key from the DSM-KROOT.
+    ///
+    /// This checks the ECDSA signature of the DSM-KROOT message and constructs
+    /// a validated TESLA root key that is marked with the `Validated` type
+    /// parameter.
+    ///
+    /// The chain parameters and the GST of the key are extracted from the
+    /// DSM-KROOT message and from the NMA header given in the `nma_header`
+    /// parameter.
+    ///
+    /// If validation using the public key `pubkey` and
+    /// [`DsmKroot::check_signature`] is correct, as well as the contents of the
+    /// DSM-KROOT padding, which are also checked using
+    /// [`DsmKroot::check_padding`], the TESLA root key is returned. Otherwise,
+    /// this returns an error that indicates what validation property was not
+    /// satisfied.
     pub fn from_dsm_kroot(
         nma_header: NmaHeader,
         dsm_kroot: DsmKroot,
@@ -292,14 +445,30 @@ impl Key<Validated> {
     }
 }
 
+/// Errors produced during the extraction of a TESLA root key from a DSM-KROOT
+/// message.
+///
+/// This gives the errors that can happen during the extraction of the TESLA
+/// root key using [`Key::from_dsm_kroot`].
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum KrootValidationError {
+    /// A valid chain could not be extracted from the DSM-KROOT message.
+    ///
+    /// See [`ChainError`].
     WrongDsmKrootChain,
+    /// The check of the padding of the DSM-KROOT message was not successful.
     WrongDsmKrootPadding,
+    /// The check of the ECDSA signature of the DSM-KROOT message was not
+    /// successful.
     WrongEcdsa,
 }
 
 impl<V: Clone> Key<V> {
+    /// Computes the one-way function of a TESLA key.
+    ///
+    /// This gives the key corresponding to the previous subframe in the TESLA
+    /// chain. The validation status of the returned key is inherited from the
+    /// validation status of `self`.
     pub fn one_way_function(&self) -> Key<V> {
         // 10 bytes are needed for GST (32 bits) || alpha (48 bits)
         let mut buffer = [0; MAX_KEY_BYTES + 10];
@@ -332,6 +501,11 @@ impl<V: Clone> Key<V> {
         hash_out.copy_from_slice(&hash[..hash_out.len()]);
     }
 
+    /// Derives a TESLA key by applying the one-way function `num_derivations` times.
+    ///
+    /// This gives the TESLA key that comes `num_derivations` subframes earlier
+    /// in the TESLA chain. The validation status of the returned key is
+    /// inherited from the validation status of `self`.
     pub fn derive(&self, num_derivations: usize) -> Key<V> {
         let mut derived_key = self.clone();
         for _ in 0..num_derivations {
@@ -342,6 +516,16 @@ impl<V: Clone> Key<V> {
 }
 
 impl Key<Validated> {
+    /// Tries to validate a TESLA key.
+    ///
+    /// If `self` precedes `other` in the TESLA chain, and `self` is already
+    /// validated, this tries to validate `other`. A copy of `other` with its
+    /// validation type parameter set to `Validated` is returned if the
+    /// validation is successful. Otherwise, this returns an error indicating
+    /// what validation property was not satisfied.
+    ///
+    /// This uses the algorithm described in Section 6.4 in the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
     pub fn validate_key<V: Clone>(
         &self,
         other: &Key<V>,
@@ -373,6 +557,28 @@ impl Key<Validated> {
         }
     }
 
+    /// Tries to validate a tag and its corresponding navigation data.
+    ///
+    /// The algorithm in Section 6.7 of the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// Is used to attempt to validate a tag and its corresponding navigation data.
+    ///
+    /// The `tag_gst` parameter should give the GST at the start of the subframe
+    /// when the `tag` was transmitted. The `prnd` and `prna` parameters are
+    /// according to Section 6.7 in the ICD. The `ctr` parameter is the index of
+    /// the tag, where the first tag in a MACK message has `ctr = 1`. Note that
+    /// [`Key::validate_tag0`] should be used to validate the tag0 in a MACK
+    /// message instead of this function.
+    ///
+    /// Note that the navigation data `navdata` must correspond to the previous
+    /// subframe of the tag, and the key `self` must correspond to the next
+    /// subframe of the tag, except when tag is a Slow MAC key (in this case the
+    /// difference between the GSTs of the key and the tag should be 11
+    /// subframes).
+    ///
+    ///
+    /// This returns `true` if the validation was succesful. Otherwise, it
+    /// returns `false`.
     pub fn validate_tag(
         &self,
         tag: &BitSlice,
@@ -392,6 +598,22 @@ impl Key<Validated> {
         self.check_tag(&buffer[..num_bytes], tag)
     }
 
+    /// Tries to validate a tag0 and its corresponding navigation data.
+    ///
+    /// The algorithm in Section 6.7 of the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// Is used to attempt to validate a tag and its corresponding navigation data.
+    ///
+    /// The `tag_gst` parameter should give the GST at the start of the subframe
+    /// when the `tag` was transmitted. The `prna` parameter corresponds to the
+    /// SVN of the satellite that transmitted the tag0.
+    ///
+    /// Note that the navigation data `navdata` must correspond to the previous
+    /// subframe of the tag0, and the key `self` must correspond to the next
+    /// subframe of the tag0.
+    ///
+    /// This returns `true` if the validation was succesful. Otherwise, it
+    /// returns `false`.
     pub fn validate_tag0(
         &self,
         tag0: &BitSlice,
@@ -443,6 +665,22 @@ impl Key<Validated> {
         computed == tag
     }
 
+    /// Tries to validate the MACSEQ field in a MACK message.
+    ///
+    /// The algorithm in Section 6.6 of the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// Is used to attempt to validate the contents of the MACSEQ field in the MACK
+    /// message.
+    ///
+    /// The `prna` parameter corresponds to the SVN of the satellite that
+    /// transmitted the MACK message, and `gst_mack` gives the GST at the start
+    /// of the subframe when the MACK message was transmitted.
+    ///
+    /// Note that the key `self` must correspond to the next subframe of the
+    /// MACK message.
+    ///
+    /// This returns `true` if the validation was succesful. Otherwise, it
+    /// returns `false`.
     pub fn validate_macseq<V>(&self, mack: &Mack<V>, prna: usize, gst_mack: Gst) -> bool {
         // No MACLTs with FLEX tags are defined currently, so FLEX
         // tags are not taken into account. This will need to be

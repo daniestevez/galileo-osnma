@@ -510,6 +510,21 @@ impl fmt::Debug for DsmKroot<'_> {
     }
 }
 
+/// MACK message.
+///
+/// The MACK message, as defined in Figure 8 of the
+/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+///
+/// This is one of the few structs in [bitfields](crate::bitfields) that is not
+/// a simple wrapper around a slice. The reason is that to interpret the MACK
+/// message, it is necessary to know the key and tag sizes, so `Mack` holds
+/// these values as well.
+///
+/// The `V` type parameter is used to indicate the validation status of the MACK
+/// message. Validation of a MACK message corresponds to checking its MACSEQ
+/// field and that its ADKDs match the corresponding look-up table. See
+/// [validation](crate::validation) for a description of validation type
+/// parameters.
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Mack<'a, V> {
     data: &'a BitSlice,
@@ -519,6 +534,12 @@ pub struct Mack<'a, V> {
 }
 
 impl<'a> Mack<'a, NotValidated> {
+    /// Constructs a new MACK message.
+    ///
+    /// The `data` should be a reference to an array containing the 60 bytes of
+    /// the MACK message. The `key_size` in bits and `tag_size` in bits should
+    /// be taken from the parameters of the current TESLA chain. The MACK
+    /// message is marked as [`NotValidated`].
     pub fn new(data: &MackMessage, key_size: usize, tag_size: usize) -> Mack<NotValidated> {
         Mack {
             data: BitSlice::from_slice(data),
@@ -530,43 +551,120 @@ impl<'a> Mack<'a, NotValidated> {
 }
 
 impl<'a, V> Mack<'a, V> {
+    /// Gives the key size in bits corresponding to the MACK message.
+    ///
+    /// This returns the value that has been given in [`Mack::new`].
     pub fn key_size(&self) -> usize {
         self.key_size
     }
 
+    /// Gives the key size in bits corresponding to the MACK message.
+    ///
+    /// This returns the value that has been given in [`Mack::new`].
     pub fn tag_size(&self) -> usize {
         self.tag_size
     }
 
+    /// Gives the tag0 field contained in the MACK header of the MACK message.
+    ///
+    /// See Figure 9 in the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
     pub fn tag0(&self) -> &BitSlice {
         &self.data[..self.tag_size()]
     }
 
+    /// Gives the value of the MACSEQ field contained in the MACK header of the MACK message.
+    ///
+    /// See Figure 9 in the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// The MACSEQ is a 12-bit integer, which is returned as a `u16`.
     pub fn macseq(&self) -> u16 {
         let macseq_size = 12;
         self.data[self.tag_size()..self.tag_size() + macseq_size].load_be::<u16>()
     }
 
+    /// Returns the number of tags in the MACK message.
+    ///
+    /// The number of tags is computed according to the tag size.
     pub fn num_tags(&self) -> usize {
         (8 * MACK_MESSAGE_BYTES - self.key_size()) / (self.tag_size() + 16)
     }
 
+    /// Gives the Key field of the MACK message.
+    ///
+    /// This fields contains a TESLA key. See Figure 8 in the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
     pub fn key(&self) -> &BitSlice {
         let start = (self.tag_size() + 16) * self.num_tags();
         &self.data[start..start + self.key_size()]
     }
 }
 
+/// MACK validation error
+///
+/// This enum lists the possible errors that can happen when a MACK message
+/// validation using [`Mack::validate`] is attempted.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum MackValidationError {
+    /// The MACSEQ field is not correct.
+    ///
+    /// The MACSEQ field is checked using the algorithm in Section 6.6 of the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
     WrongMacseq,
+    /// One of the ADKD fields is not correct.
     WrongAdkd {
+        /// The index of the first tag whose ADKD is not correct.
         tag_index: usize,
+        /// The reason why the ADKD field is not correct.
         error: AdkdCheckError,
     },
 }
 
 impl<'a, V: Clone> Mack<'a, V> {
+    /// Gives an object representing one of the Tag-Info sections in the MACK message.
+    ///
+    /// The Tag-Info section is defined in Figure 11 of the [OSNMA
+    /// ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// The parameter `n` corresponds to the index of the Tag-Info in the MACK
+    /// message. The first Tag-Info has `n = 1`, since `n = 0` would correspond
+    /// to the Tag0 field, which does not have an associated info field and is
+    /// obtained with [`Mack::tag0`].
+    ///
+    /// The validation status of the Tag-Info is inherited from the validation
+    /// status of the MACK message. There is no way to validate Tag-Info
+    /// sections once they have been separated from the MACK message. If a
+    /// validated Tag-Info is needed, the whole MACK message should be validated
+    /// first using [`Mack::validate`] before calling [`Mack::tag_and_info`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is not between 1 and `self.num_tags() - 1`.
+    pub fn tag_and_info(&self, n: usize) -> TagAndInfo<'_, V> {
+        assert!(0 < n && n < self.num_tags());
+        let size = self.tag_size() + 16;
+        TagAndInfo {
+            data: &self.data[size * n..size * (n + 1)],
+            _validated: self._validated.clone(),
+        }
+    }
+
+    /// Try to validate the MACK message.
+    ///
+    /// Given the TESLA `key` transmitted on the next subframe, this will
+    /// attempt to validate the MACSEQ field and the ADKD fields of the MACK
+    /// message. The MACSEQ field is checked using the algorithm in Section 6.6
+    /// of the
+    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// The sequence of ADKD fields is checked against the MAC look-up table
+    /// using the chain parameters held by the TESLA key.
+    ///
+    /// The parameter `prna` should be the SVN of the satellite that transmitted
+    /// this MACK message, and `gst_mack` corresponds to the GST at the
+    /// start of the subframe in which the MACK message was transmitted.
+    ///
+    /// If the validation is successful, this returns a copy of `self` with the
+    /// validation type parameter `V` set to `Validated`. Otherwise, an error
+    /// indicating which check was not satisfied is returned.
     pub fn validate(
         &self,
         key: &'_ Key<Validated>,
@@ -595,17 +693,6 @@ impl<'a, V: Clone> Mack<'a, V> {
     }
 }
 
-impl<'a, V: Clone> Mack<'a, V> {
-    pub fn tag_and_info(&self, n: usize) -> TagAndInfo<'_, V> {
-        assert!(0 < n && n < self.num_tags());
-        let size = self.tag_size() + 16;
-        TagAndInfo {
-            data: &self.data[size * n..size * (n + 1)],
-            _validated: self._validated.clone(),
-        }
-    }
-}
-
 impl<V: fmt::Debug + Clone> fmt::Debug for Mack<'_, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut dbg = f.debug_struct("Mack");
@@ -620,16 +707,32 @@ impl<V: fmt::Debug + Clone> fmt::Debug for Mack<'_, V> {
     }
 }
 
+/// Tag-Info section.
+///
+/// The Tag-Info section is defined in Figure 11 of the
+/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// A Tag-Info field is obtained from a MACK message with [`Mack::tag_and_info`].
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct TagAndInfo<'a, V> {
     data: &'a BitSlice,
     _validated: V,
 }
 
+/// PRND (PRN of the satellite transmitting the authenticated data).
+///
+/// This represents the values of the PRND field in a Tag-Info section, as
+/// described in Table 12 in the
+/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Prnd {
-    GalileoSvid(u8),
+    /// Galileo SVID (PRND = 1 - 36).
+    GalileoSvid(
+        /// The Galileo SVID value (between 1 and 36).
+        u8,
+    ),
+    /// Galileo constellation-related information (PRND = 255).
     GalileoConstellation,
+    /// Reserved value (any other value of the PRND field).
     Reserved,
 }
 
@@ -644,19 +747,30 @@ impl TryFrom<Prnd> for u8 {
     }
 }
 
+/// ADKD (Authentication Data and Key Delay).
+///
+/// Represents the values of the ADKD (Authentication Data and Key Delay) field,
+/// as defined in Table 14 in the
+/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Adkd {
+    /// Galileo I/NAV ephemeris, clock and status (ADKD = 0).
     InavCed,
+    /// Galileo I/NAV timing parameters (ADKD = 4).
     InavTiming,
+    /// Slow MAC. Galileo I/NAV ephemeris, clock and status (ADKD = 12).
     SlowMac,
+    /// Reserved value (any other ADKD value).
     Reserved,
 }
 
 impl<'a, V> TagAndInfo<'a, V> {
+    /// Gives the tag field in the Tag-Info section.
     pub fn tag(&self) -> &BitSlice {
         &self.data[..self.data.len() - 16]
     }
 
+    /// Gives the value of the PRND field in the Tag-Info section.
     pub fn prnd(&self) -> Prnd {
         let len = self.data.len();
         match self.data[len - 16..len - 8].load_be::<u8>() {
@@ -666,6 +780,7 @@ impl<'a, V> TagAndInfo<'a, V> {
         }
     }
 
+    /// Gives the value of the ADKD field in the Tag-Info section.
     pub fn adkd(&self) -> Adkd {
         let len = self.data.len();
         match self.data[len - 8..len - 4].load_be::<u8>() {

@@ -1,13 +1,32 @@
+//! Galmon integration.
+//!
+//! This module contains a reader for the
+//! [Galmon transport protocol](https://github.com/berthubert/galmon#internals).
+//! The reader can be used to obtain INAV frames and OSNMA data from the
+//! [Galmon](https://github.com/berthubert/galmon) tools, such as `ubxtool`.
+
 pub mod navmon {
+    //! Galmon `navmon` protocol buffers definition.
+    //!
+    //! This module contains a Rust version of the protocol buffers definition
+    //! [`navmon.proto`](https://github.com/berthubert/galmon/blob/master/navmon.proto).
+    //! The [prost](https://crates.io/crates/prost) crate is used to generate the
+    //! code in this module.
+    #![allow(missing_docs)]
     include!(concat!(env!("OUT_DIR"), "/navmon_protobuf.rs"));
 }
 
 pub mod transport {
+    //! Galmon transport protocol.
     use super::navmon::NavMonMessage;
     use bytes::BytesMut;
     use prost::Message;
     use std::io::Read;
 
+    /// Reader for the Galmon transport protocol.
+    ///
+    /// This wraps around a [`Read`] `R` and can be used to read navmon packets
+    /// from `R`.
     #[derive(Debug, Clone)]
     pub struct ReadTransport<R> {
         read: R,
@@ -15,6 +34,7 @@ pub mod transport {
     }
 
     impl<R: Read> ReadTransport<R> {
+        /// Constructs a new reader using a [`Read`] `read`.
         pub fn new(read: R) -> ReadTransport<R> {
             let default_cap = 2048;
             let mut buffer = BytesMut::with_capacity(default_cap);
@@ -22,6 +42,9 @@ pub mod transport {
             ReadTransport { read, buffer }
         }
 
+        /// Tries to read a navmon packet.
+        ///
+        /// If the read is successful, a navmon packet is returned.
         pub fn read_packet(&mut self) -> std::io::Result<NavMonMessage> {
             // Read 4-byte magic value and 2-byte frame length
             if let Err(e) = self.read.read_exact(&mut self.buffer[..6]) {
