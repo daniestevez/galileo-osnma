@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["Daniel Estevez <daniel@destevez.net>"]
 description = "Galileo OSNMA processing of Galmon transport protocol"
 license = "MIT OR Apache-2.0"
+default-run = "galmon-osnma"
 
 publish = false
 

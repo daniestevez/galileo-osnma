@@ -21,7 +21,7 @@ pub mod transport {
     use super::navmon::NavMonMessage;
     use bytes::BytesMut;
     use prost::Message;
-    use std::io::Read;
+    use std::io::{Read, Write};
 
     /// Reader for the Galmon transport protocol.
     ///
@@ -80,6 +80,58 @@ pub mod transport {
         }
     }
 
+    /// Writer for the Galmon transport protocol.
+    ///
+    /// This wraps around a [`Write`] `W` and can be used to write navmon packets
+    /// to `W`.
+    #[derive(Debug, Clone)]
+    pub struct WriteTransport<W> {
+        write: W,
+        buffer: BytesMut,
+    }
+
+    impl<W: Write> WriteTransport<W> {
+        /// Constructs a new writer using a [`Write`] `write`.
+        pub fn new(write: W) -> WriteTransport<W> {
+            let default_cap = 2048;
+            let mut buffer = BytesMut::with_capacity(default_cap);
+            buffer.reserve(default_cap);
+            WriteTransport { write, buffer }
+        }
+
+        /// Tries to write a navmon packet.
+        ///
+        /// If the write is successful, the number of bytes writte is returned.
+        pub fn write_packet(&mut self, packet: &NavMonMessage) -> std::io::Result<usize> {
+            let size = packet.encoded_len();
+            // Header is 6 bytes
+            let total_size = size + 6;
+            let cap = self.buffer.capacity();
+            if total_size > cap {
+                log::debug!("resize buffer to {}", total_size);
+                self.buffer.reserve(total_size - cap);
+            }
+            self.buffer.clear();
+            self.buffer.extend_from_slice(b"bert");
+            let size_u16 = u16::try_from(size).unwrap();
+            self.buffer.extend_from_slice(&size_u16.to_be_bytes());
+            match packet.encode(&mut self.buffer) {
+                Ok(()) => log::trace!("encoded protobuf frame: {:?}", packet),
+                Err(e) => {
+                    log::error!("could not encoded protobuf frame: {}", e);
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e));
+                }
+            };
+            match self.write.write_all(&self.buffer) {
+                Ok(()) => Ok(self.buffer.len()),
+                Err(e) => {
+                    log::error!("could not write: {}", e);
+                    Err(e)
+                }
+            }
+        }
+    }
+
     #[cfg(test)]
     mod test {
         use super::*;
@@ -107,6 +159,22 @@ pub mod transport {
             let packets = &data::GALMON_PACKETS[..10];
             let mut transport = ReadTransport::new(packets);
             assert!(transport.read_packet().is_err());
+        }
+
+        #[test]
+        fn read_packets_write_packets() {
+            let buffer = Vec::new();
+            let packets = &data::GALMON_PACKETS[..];
+            let mut read = ReadTransport::new(packets);
+            let mut write = WriteTransport::new(buffer);
+            let mut total_size = 0;
+            // There should be 17 packets in the test data
+            for _ in 0..17 {
+                let packet = read.read_packet().unwrap();
+                total_size += write.write_packet(&packet).unwrap();
+            }
+            assert_eq!(&write.write, packets);
+            assert_eq!(total_size, packets.len());
         }
     }
 }
