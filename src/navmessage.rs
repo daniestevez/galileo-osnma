@@ -6,13 +6,12 @@
 //! if finer control is needed.
 
 use crate::bitfields::{Adkd, Mack};
-use crate::gst::Gst;
 use crate::storage::StaticStorage;
 use crate::tesla::Key;
-use crate::types::{BitSlice, InavWord, NUM_SVNS};
+use crate::types::{BitSlice, InavWord};
 use crate::validation::Validated;
+use crate::{Gst, Svn};
 use bitvec::prelude::*;
-use core::num::NonZeroU8;
 use generic_array::GenericArray;
 use typenum::Unsigned;
 
@@ -77,38 +76,28 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         }
     }
 
-    fn check_svn(svn: usize) {
-        assert!((1..=NUM_SVNS).contains(&svn));
-    }
-
     /// Feed an INAV word into the navigation message storage.
     ///
     /// The `svn` parameter corresponds to the SVN of the satellite transmitting
     /// the INAV word. This should be obtained from the PRN used for tracking.
     ///
     /// The `gst` parameter gives the GST at the start of the INAV page transmission.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `svn` is not a number between 1 and 36.
-    pub fn feed(&mut self, word: &InavWord, svn: usize, gst: Gst) {
+    pub fn feed(&mut self, word: &InavWord, svn: Svn, gst: Gst) {
         log::trace!(
-            "feeding INAV word = {:02x?} for svn = E{:02} GST {:?}",
+            "feeding INAV word = {:02x?} for {} GST {:?}",
             word,
             svn,
             gst
         );
-        Self::check_svn(svn);
         let gst = gst.gst_subframe();
         self.adjust_write_pointer(gst);
 
         // Search for best location to place this SVN
-        let svn_u8 = NonZeroU8::new(svn.try_into().unwrap()).unwrap();
         let ced = self
             .current_ced_as_mut()
             .iter_mut()
             .max_by_key(|x| match x.svn {
-                Some(s) if s == svn_u8 => u16::from(u8::MAX) + 2,
+                Some(s) if s == svn => u16::from(u8::MAX) + 2,
                 None => u16::from(u8::MAX) + 1,
                 _ => u16::from(x.stale_counter),
             })
@@ -118,7 +107,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             ced.svn,
             ced.stale_counter
         );
-        ced.feed(word, svn_u8);
+        ced.feed(word, svn);
         self.timing_parameters[self.write_pointer].feed(word, svn);
     }
 
@@ -169,13 +158,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
     /// available in the OSNMA storage. If the storage does not contain any
     /// authenticated CED and health status data for this SVN, this returns
     /// `None`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `svn` is not a number between 1 and 36.
-    pub fn get_ced_and_status(&self, svn: usize) -> Option<NavMessageData> {
-        Self::check_svn(svn);
-        let svn_u8 = NonZeroU8::new(svn.try_into().unwrap()).unwrap();
+    pub fn get_ced_and_status(&self, svn: Svn) -> Option<NavMessageData> {
         // Search in order of decreasing Gst
         for j in 0..S::NavMessageDepth::USIZE {
             let gst_idx =
@@ -183,7 +166,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             for item in
                 self.ced_and_status[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS].iter()
             {
-                if item.svn == Some(svn_u8)
+                if item.svn == Some(svn)
                     && item.stale_counter == 0
                     && item.all_valid()
                     && item.authbits >= MIN_AUTHBITS
@@ -222,14 +205,12 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         None
     }
 
-    fn ced_and_status_as_mut(&mut self, svn: usize, gst: Gst) -> Option<&mut CedAndStatus> {
-        Self::check_svn(svn);
-        let svn_u8 = NonZeroU8::new(svn.try_into().unwrap()).unwrap();
+    fn ced_and_status_as_mut(&mut self, svn: Svn, gst: Gst) -> Option<&mut CedAndStatus> {
         let gst_idx = self.find_gst(gst)?;
         for item in
             self.ced_and_status[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS].iter_mut()
         {
-            if item.svn == Some(svn_u8) && item.stale_counter == 0 && item.all_valid() {
+            if item.svn == Some(svn) && item.stale_counter == 0 && item.all_valid() {
                 return Some(item);
             }
         }
@@ -271,10 +252,9 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         &mut self,
         mack: Mack<Validated>,
         key: &Key<Validated>,
-        prna: usize,
+        prna: Svn,
         gst_mack: Gst,
     ) {
-        let prna_u8 = u8::try_from(prna).unwrap();
         let gst_navmessage = gst_mack.add_seconds(-30);
         if let Some(navdata) = self.ced_and_status_as_mut(prna, gst_navmessage) {
             // Try to validate tag0
@@ -283,8 +263,8 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 mack.tag0(),
                 Adkd::InavCed,
                 gst_mack,
-                prna_u8,
-                prna_u8,
+                u8::from(prna),
+                prna,
                 0,
                 navdata,
             );
@@ -301,12 +281,18 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 }
             };
             if let Some(navdata) = match tag.adkd() {
-                Adkd::InavCed => self
-                    .ced_and_status_as_mut(prnd.into(), gst_navmessage)
-                    .map(|x| {
-                        let y: &mut dyn AuthBits = x;
-                        y
-                    }),
+                Adkd::InavCed => match Svn::try_from(prnd) {
+                    Ok(prnd_svn) => self
+                        .ced_and_status_as_mut(prnd_svn, gst_navmessage)
+                        .map(|x| {
+                            let y: &mut dyn AuthBits = x;
+                            y
+                        }),
+                    Err(_) => {
+                        log::error!("invalid PRND {:?} for ADKD {:?}", tag.prnd(), tag.adkd());
+                        None
+                    }
+                },
                 Adkd::InavTiming => self.timing_parameters_as_mut(gst_navmessage).map(|x| {
                     let y: &mut dyn AuthBits = x;
                     y
@@ -322,7 +308,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 }
             } {
                 let prnd = if tag.adkd() == Adkd::InavTiming {
-                    prna_u8
+                    u8::from(prna)
                 } else {
                     prnd
                 };
@@ -332,7 +318,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                     tag.adkd(),
                     gst_mack,
                     prnd,
-                    prna_u8,
+                    prna,
                     j,
                     navdata,
                 );
@@ -357,11 +343,10 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         &mut self,
         mack: Mack<Validated>,
         key: &Key<Validated>,
-        prna: usize,
+        prna: Svn,
         gst_mack: Gst,
     ) {
         let gst_navmessage = gst_mack.add_seconds(-30);
-        let prna_u8 = u8::try_from(prna).unwrap();
         for j in 1..mack.num_tags() {
             let tag = mack.tag_and_info(j);
             if tag.adkd() != Adkd::SlowMac {
@@ -374,14 +359,21 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                     continue;
                 }
             };
-            if let Some(navdata) = self.ced_and_status_as_mut(prnd.into(), gst_navmessage) {
+            let prnd_svn = match Svn::try_from(prnd) {
+                Ok(s) => s,
+                Err(_) => {
+                    log::error!("invalid PRND {:?} for Slow MAC tag {:?}", tag.prnd(), tag);
+                    continue;
+                }
+            };
+            if let Some(navdata) = self.ced_and_status_as_mut(prnd_svn, gst_navmessage) {
                 Self::validate_tag(
                     &key,
                     tag.tag(),
                     tag.adkd(),
                     gst_mack,
                     prnd,
-                    prna_u8,
+                    prna,
                     j,
                     navdata,
                 );
@@ -396,7 +388,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         adkd: Adkd,
         gst_tag: Gst,
         prnd: u8,
-        prna: u8,
+        prna: Svn,
         tag_idx: usize,
         navdata: &mut dyn AuthBits,
     ) -> bool {
@@ -407,7 +399,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         };
         if ret {
             log::info!(
-                "E{:02} {:?} at {:?} tag{} correct (auth by E{:02})",
+                "E{:02} {:?} at {:?} tag{} correct (auth by {})",
                 prnd,
                 adkd,
                 gst_tag,
@@ -417,7 +409,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             navdata.add_authbits(tag);
         } else {
             log::error!(
-                "E{:02} {:?} at {:?} tag{} wrong (auth by E{:02})",
+                "E{:02} {:?} at {:?} tag{} wrong (auth by {})",
                 prnd,
                 adkd,
                 gst_tag,
@@ -444,7 +436,7 @@ const CED_AND_STATUS_WORDS: usize = 5;
 pub struct CedAndStatus {
     data: [u8; CED_AND_STATUS_BYTES],
     valid: [bool; CED_AND_STATUS_WORDS],
-    svn: Option<NonZeroU8>,
+    svn: Option<Svn>,
     stale_counter: u8,
     authbits: u16,
 }
@@ -532,7 +524,7 @@ impl_common!(
 );
 
 impl CedAndStatus {
-    fn feed(&mut self, word: &InavWord, svn: NonZeroU8) {
+    fn feed(&mut self, word: &InavWord, svn: Svn) {
         match self.svn {
             Some(s) if s == svn => (),
             None => self.svn = Some(svn),
@@ -627,7 +619,7 @@ impl CedAndStatus {
 }
 
 impl TimingParameters {
-    fn feed(&mut self, word: &InavWord, svn: usize) {
+    fn feed(&mut self, word: &InavWord, svn: Svn) {
         let word = BitSlice::from_slice(word);
         let word_type = word[..6].load_be::<u8>();
         match word_type {
@@ -663,10 +655,10 @@ impl TimingParameters {
         log::trace!("TimingParameters storing INAV word type {}", word_type);
     }
 
-    fn check_mismatch(word_type: u8, svn: usize, stored: &BitSlice, received: &BitSlice) {
+    fn check_mismatch(word_type: u8, svn: Svn, stored: &BitSlice, received: &BitSlice) {
         if stored != received {
             log::warn!(
-                "received word {} from E{:02} doesn't match word stored for the same subframe\
+                "received word {} from {} doesn't match word stored for the same subframe\
                         (received = {:?}, stored = {:?}",
                 word_type,
                 svn,

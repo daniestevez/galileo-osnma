@@ -2,7 +2,7 @@ use galileo_osnma::{
     galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport},
     storage::FullStorage,
     types::{BitSlice, NUM_SVNS},
-    Gst, Osnma, Wn,
+    Gst, Osnma, Svn, Wn,
 };
 use p256::ecdsa::VerifyingKey;
 use spki::DecodePublicKey;
@@ -43,15 +43,15 @@ fn main() -> std::io::Result<()> {
             let wn = Wn::try_from(inav.gnss_wn).unwrap()
                 + Wn::try_from(inav.gnss_tow / secs_in_week).unwrap();
             let gst = Gst::new(wn, tow);
-            let svn = usize::try_from(inav.gnss_sv).unwrap();
+            let svn = Svn::try_from(inav.gnss_sv).unwrap();
 
             osnma.feed_inav(inav_word[..].try_into().unwrap(), svn, gst);
             if let Some(osnma_data) = osnma_data {
                 osnma.feed_osnma(osnma_data[..].try_into().unwrap(), svn, gst);
             }
 
-            for svn in 1..=NUM_SVNS {
-                let idx = svn - 1;
+            for svn in Svn::iter() {
+                let idx = usize::from(svn) - 1;
                 if let Some(data) = osnma.get_ced_and_status(svn) {
                     let mut data_bytes = [0u8; 69];
                     let a = BitSlice::from_slice_mut(&mut data_bytes);

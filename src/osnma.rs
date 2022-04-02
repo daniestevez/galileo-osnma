@@ -1,13 +1,13 @@
 use crate::bitfields::{DsmHeader, DsmKroot, Mack, NmaHeader};
 use crate::dsm::CollectDsm;
-use crate::gst::Gst;
 use crate::mack::MackStorage;
 use crate::navmessage::{CollectNavMessage, NavMessageData};
 use crate::storage::StaticStorage;
 use crate::subframe::CollectSubframe;
 use crate::tesla::Key;
-use crate::types::{HkrootMessage, InavWord, MackMessage, OsnmaDataMessage, NUM_SVNS};
+use crate::types::{HkrootMessage, InavWord, MackMessage, OsnmaDataMessage};
 use crate::validation::{NotValidated, Validated};
+use crate::{Gst, Svn};
 
 use core::cmp::Ordering;
 use p256::ecdsa::VerifyingKey;
@@ -23,7 +23,7 @@ use p256::ecdsa::VerifyingKey;
 /// # Examples
 ///
 /// ```
-/// use galileo_osnma::{Gst, Osnma};
+/// use galileo_osnma::{Gst, Osnma, Svn};
 /// use galileo_osnma::storage::FullStorage;
 /// use p256::ecdsa::VerifyingKey;
 ///
@@ -41,7 +41,7 @@ use p256::ecdsa::VerifyingKey;
 /// let mut osnma = Osnma::<FullStorage>::from_pubkey(pubkey, only_slowmac);
 ///
 /// // Feed some INAV and OSNMA data. Data full of zeros is used here.
-/// let svn = 12; // E12
+/// let svn = Svn::try_from(12).unwrap(); // E12
 /// let gst = Gst::new(1177, 175767); // WN 1177, TOW 175767
 /// let inav = [0; 16];
 /// let osnma_data = [0; 5];
@@ -121,11 +121,7 @@ impl<S: StaticStorage> Osnma<S> {
     /// the INAV word. This should be obtained from the PRN used for tracking.
     ///
     /// The `gst` parameter gives the GST at the start of the INAV page transmission.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `svn` is not a number between 1 and 36.
-    pub fn feed_inav(&mut self, word: &InavWord, svn: usize, gst: Gst) {
+    pub fn feed_inav(&mut self, word: &InavWord, svn: Svn, gst: Gst) {
         self.data.data.navmessage.feed(word, svn, gst);
     }
 
@@ -138,11 +134,7 @@ impl<S: StaticStorage> Osnma<S> {
     /// the INAV word. This should be obtained from the PRN used for tracking.
     ///
     /// The `gst` parameter gives the GST at the start of the INAV page transmission.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `svn` is not a number between 1 and 36.
-    pub fn feed_osnma(&mut self, osnma: &OsnmaDataMessage, svn: usize, gst: Gst) {
+    pub fn feed_osnma(&mut self, osnma: &OsnmaDataMessage, svn: Svn, gst: Gst) {
         if osnma.iter().all(|&x| x == 0) {
             // No OSNMA data
             return;
@@ -159,11 +151,7 @@ impl<S: StaticStorage> Osnma<S> {
     /// available in the OSNMA storage. If the storage does not contain any
     /// authenticated CED and health status data for this SVN, this returns
     /// `None`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `svn` is not a number between 1 and 36.
-    pub fn get_ced_and_status(&self, svn: usize) -> Option<NavMessageData> {
+    pub fn get_ced_and_status(&self, svn: Svn) -> Option<NavMessageData> {
         self.data.data.navmessage.get_ced_and_status(svn)
     }
 
@@ -179,13 +167,7 @@ impl<S: StaticStorage> Osnma<S> {
 }
 
 impl<S: StaticStorage> OsnmaDsm<S> {
-    fn process_subframe(
-        &mut self,
-        hkroot: &HkrootMessage,
-        mack: &MackMessage,
-        svn: usize,
-        gst: Gst,
-    ) {
+    fn process_subframe(&mut self, hkroot: &HkrootMessage, mack: &MackMessage, svn: Svn, gst: Gst) {
         self.data.mack.store(mack, svn, gst);
 
         let nma_header = &hkroot[..1].try_into().unwrap();
@@ -279,8 +261,7 @@ impl<S: StaticStorage> OsnmaData<S> {
         // Re-generate the key that was used for the MACSEQ of the
         // Slow MAC MACK
         let slowmac_key = current_key.derive(10);
-        for svn in 1..=NUM_SVNS {
-            let svn_u8 = u8::try_from(svn).unwrap();
+        for svn in Svn::iter() {
             if !self.only_slowmac {
                 if let Some(mack) = self.mack.get(svn, gst_mack) {
                     let mack = Mack::new(
@@ -288,7 +269,7 @@ impl<S: StaticStorage> OsnmaData<S> {
                         current_key.chain().key_size_bits(),
                         current_key.chain().tag_size_bits(),
                     );
-                    if let Some(mack) = Self::validate_mack(mack, &current_key, svn_u8, gst_mack) {
+                    if let Some(mack) = Self::validate_mack(mack, &current_key, svn, gst_mack) {
                         self.navmessage
                             .process_mack(mack, &current_key, svn, gst_mack);
                     };
@@ -306,7 +287,7 @@ impl<S: StaticStorage> OsnmaData<S> {
                 );
                 // Note that slowmac_key is used for validation of the MACK, while
                 // current_key is used for validation of the Slow MAC tags it contains.
-                if let Some(mack) = Self::validate_mack(mack, &slowmac_key, svn_u8, gst_slowmac) {
+                if let Some(mack) = Self::validate_mack(mack, &slowmac_key, svn, gst_slowmac) {
                     self.navmessage
                         .process_mack_slowmac(mack, &current_key, svn, gst_slowmac);
                 }
@@ -317,7 +298,7 @@ impl<S: StaticStorage> OsnmaData<S> {
     fn validate_mack<'a>(
         mack: Mack<'a, NotValidated>,
         key: &Key<Validated>,
-        prna: u8,
+        prna: Svn,
         gst_mack: Gst,
     ) -> Option<Mack<'a, Validated>> {
         match mack.validate(key, prna.into(), gst_mack) {

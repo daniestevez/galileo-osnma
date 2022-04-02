@@ -5,8 +5,8 @@
 
 use crate::gst::Gst;
 use crate::storage::StaticStorage;
-use crate::types::{MackMessage, NUM_SVNS};
-use core::num::NonZeroU8;
+use crate::types::MackMessage;
+use crate::Svn;
 use generic_array::GenericArray;
 use typenum::Unsigned;
 
@@ -28,7 +28,7 @@ pub struct MackStorage<S: StaticStorage> {
 // This is pub only because it appears in the definition of StaticStorageTypenum
 pub struct Mack {
     message: MackMessage,
-    svn: NonZeroU8,
+    svn: Svn,
 }
 
 impl<S: StaticStorage> MackStorage<S> {
@@ -39,10 +39,6 @@ impl<S: StaticStorage> MackStorage<S> {
             gsts: GenericArray::default(),
             write_pointer: 0,
         }
-    }
-
-    fn check_svn(svn: usize) {
-        assert!((1..=NUM_SVNS).contains(&svn));
     }
 
     /// Store a MACK message.
@@ -56,31 +52,20 @@ impl<S: StaticStorage> MackStorage<S> {
     ///
     /// The `gst` parameter gives the GST at the start of the subframe when the
     /// MACK message was transmitted.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `svn` is not a number between 1 and 36.
-    pub fn store(&mut self, mack: &MackMessage, svn: usize, gst: Gst) {
-        Self::check_svn(svn);
+    pub fn store(&mut self, mack: &MackMessage, svn: Svn, gst: Gst) {
         self.adjust_write_pointer(gst);
         for location in self.current_macks_as_mut().iter_mut() {
             if location.is_none() {
-                log::trace!(
-                    "storing MACK {:02x?} for E{:02} and GST {:?}",
-                    mack,
-                    svn,
-                    gst
-                );
-                let svn_u8 = NonZeroU8::new(svn.try_into().unwrap()).unwrap();
+                log::trace!("storing MACK {:02x?} for {} and GST {:?}", mack, svn, gst);
                 *location = Some(Mack {
                     message: *mack,
-                    svn: svn_u8,
+                    svn,
                 });
                 return;
             }
         }
         log::warn!(
-            "no room to store MACK {:02x?} for E{:02} and GST {:?}",
+            "no room to store MACK {:02x?} for {} and GST {:?}",
             mack,
             svn,
             gst
@@ -122,22 +107,16 @@ impl<S: StaticStorage> MackStorage<S> {
     ///
     /// The `gst` parameter refers to the GST at the start of the subframe when the
     /// MACK message was transmitted.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `svn` is not a number between 1 and 36.
-    pub fn get(&self, svn: usize, gst: Gst) -> Option<&MackMessage> {
-        Self::check_svn(svn);
+    pub fn get(&self, svn: Svn, gst: Gst) -> Option<&MackMessage> {
         let gst_idx =
             self.gsts
                 .iter()
                 .enumerate()
                 .find_map(|(j, &g)| if g == Some(gst) { Some(j) } else { None })?;
-        let svn_u8 = NonZeroU8::new(svn.try_into().unwrap()).unwrap();
         self.macks[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS]
             .iter()
             .find_map(|x| match x {
-                Some(Mack { svn, message }) if *svn == svn_u8 => Some(message),
+                Some(Mack { svn: s, message }) if *s == svn => Some(message),
                 _ => None,
             })
     }

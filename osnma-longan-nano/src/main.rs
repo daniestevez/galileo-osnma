@@ -5,8 +5,8 @@ use crate::pac::USART0;
 use core::fmt::Write;
 use galileo_osnma::{
     storage::SmallStorage,
-    types::{HKROOT_SECTION_BYTES, INAV_WORD_BYTES, MACK_SECTION_BYTES, NUM_SVNS},
-    Gst, Osnma,
+    types::{HKROOT_SECTION_BYTES, INAV_WORD_BYTES, MACK_SECTION_BYTES},
+    Gst, Osnma, Svn,
 };
 use longan_nano::hal::{pac, prelude::*, serial};
 use nb::block;
@@ -85,12 +85,12 @@ impl OsnmaInterface {
         let mut words = core::str::from_utf8(&self.board.rx_buffer[..len])
             .unwrap()
             .split_whitespace();
-        let svn = words.next().unwrap().parse::<usize>().unwrap();
+        let svn = Svn::try_from(words.next().unwrap().parse::<usize>().unwrap()).unwrap();
         let wn = words.next().unwrap().parse::<u16>().unwrap();
         let tow = words.next().unwrap().parse::<u32>().unwrap();
         let gst = Gst::new(wn, tow);
         let data = words.next().unwrap();
-        write!(&mut self.board.tx, "E{:02} WN {} TOW {} ", svn, wn, tow).unwrap();
+        write!(&mut self.board.tx, "{} WN {} TOW {} ", svn, wn, tow).unwrap();
         const OSNMA_BYTES: usize = HKROOT_SECTION_BYTES + MACK_SECTION_BYTES;
         if data.len() == INAV_WORD_BYTES * 2 {
             let mut inav = [0; INAV_WORD_BYTES];
@@ -113,7 +113,7 @@ impl OsnmaInterface {
         }
         write!(&mut self.board.tx, "AUTH ADKD=0").unwrap();
         let mut some_adkd0 = false;
-        for svn in 1..=NUM_SVNS {
+        for svn in Svn::iter() {
             if let Some(data) = self.osnma.get_ced_and_status(svn) {
                 some_adkd0 = true;
                 write!(&mut self.board.tx, " E{:02} TOW {}", svn, data.gst().tow()).unwrap();

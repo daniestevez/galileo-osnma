@@ -7,7 +7,7 @@
 use crate::tesla::{AdkdCheckError, Key};
 use crate::types::{BitSlice, MackMessage, Towh, MACK_MESSAGE_BYTES};
 use crate::validation::{NotValidated, Validated};
-use crate::{Gst, Wn};
+use crate::{Gst, Svn, Wn};
 use bitvec::prelude::*;
 use core::fmt;
 use p256::ecdsa::{
@@ -668,7 +668,7 @@ impl<'a, V: Clone> Mack<'a, V> {
     pub fn validate(
         &self,
         key: &'_ Key<Validated>,
-        prna: usize,
+        prna: Svn,
         gst_mack: Gst,
     ) -> Result<Mack<'a, Validated>, MackValidationError> {
         if !key.validate_macseq(self, prna, gst_mack) {

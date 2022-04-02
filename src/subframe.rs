@@ -7,11 +7,11 @@
 //! The data for the 36 satellites in the Galileo constellation is collected in
 //! parallel.
 
-use crate::gst::{Gst, Tow, Wn};
 use crate::types::{
     HkrootMessage, HkrootSection, MackMessage, MackSection, OsnmaDataMessage, HKROOT_MESSAGE_BYTES,
     HKROOT_SECTION_BYTES, MACK_MESSAGE_BYTES, MACK_SECTION_BYTES, NUM_SVNS,
 };
+use crate::{Gst, Svn, Tow, Wn};
 
 const WORDS_PER_SUBFRAME: u8 = 15;
 const SECONDS_PER_SUBFRAME: Tow = 30;
@@ -56,21 +56,17 @@ impl CollectSubframe {
     /// the old subframe is discarded, and collection of data for a new subframe
     /// begins. This assumes that the OSNMA data for different satellites is fed
     /// in chronological order.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `svn` is not a number between 1 and 36.
     pub fn feed(
         &mut self,
         osnma_data: &OsnmaDataMessage,
-        svn: usize,
+        svn: Svn,
         gst: Gst,
     ) -> Option<(&HkrootMessage, &MackMessage, Gst)> {
         let hkroot_section: HkrootSection = osnma_data[..HKROOT_SECTION_BYTES].try_into().unwrap();
         let mack_section: MackSection = osnma_data[HKROOT_SECTION_BYTES..].try_into().unwrap();
         let word_num = (gst.tow() / 2) % Tow::from(WORDS_PER_SUBFRAME);
         log::trace!(
-            "feeding hkroot = {:02x?}, mack = {:02x?} for svn = E{:02} (GST = {:?}, word number = {})",
+            "feeding hkroot = {:02x?}, mack = {:02x?} for {} (GST = {:?}, word number = {})",
             hkroot_section,
             mack_section,
             svn,
@@ -86,10 +82,10 @@ impl CollectSubframe {
                 self.num_valid[s] = 0;
             }
         }
-        let svn_idx = svn - 1;
+        let svn_idx = usize::from(svn) - 1;
         if word_num != u32::from(self.num_valid[svn_idx]) {
             log::trace!(
-                "there are missing words for svn = E{:02} (GST {:?}), \
+                "there are missing words for {} (GST {:?}), \
                  word number = {}, valid words = {}",
                 svn,
                 gst,
@@ -107,7 +103,7 @@ impl CollectSubframe {
         self.num_valid[svn_idx] += 1;
         if self.num_valid[svn_idx] == WORDS_PER_SUBFRAME {
             log::trace!(
-                "completed collection for svn = E{:02} (GST {:?})\n\
+                "completed collection for {} (GST {:?})\n\
                  hkroot = {:02x?}\nmack = {:02x?}",
                 svn,
                 gst,
@@ -145,7 +141,7 @@ mod test {
         // The data that is supplied as part of the HKROOT section and MACK
         // section is different each time, so that we can check that the data
         // has been assembled correctly into the HKROOT and MACK messages.
-        let svn = 1;
+        let svn = Svn::try_from(1).unwrap();
         let wn = 1234;
         let mut collector = CollectSubframe::new();
 

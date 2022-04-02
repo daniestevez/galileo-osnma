@@ -7,9 +7,9 @@
 //! messages and authenticate the navigation data using the tags in a MACK message.
 
 use crate::bitfields::{self, Adkd, DsmKroot, Mack, NmaHeader, NmaStatus, Prnd, TagAndInfo};
-use crate::gst::{Gst, Tow};
 use crate::types::{BitSlice, NUM_SVNS};
 use crate::validation::{NotValidated, Validated};
+use crate::{Gst, Svn, Tow};
 use aes::Aes128;
 use bitvec::prelude::*;
 use cmac::Cmac;
@@ -197,7 +197,7 @@ impl Chain {
         &self,
         num_tag: usize,
         tag: TagAndInfo<V>,
-        prna: usize,
+        prna: Svn,
         gst_tag: Gst,
     ) -> Result<(), AdkdCheckError> {
         assert!(num_tag >= 1);
@@ -584,7 +584,7 @@ impl Key<Validated> {
         tag: &BitSlice,
         tag_gst: Gst,
         prnd: u8,
-        prna: u8,
+        prna: Svn,
         ctr: u8,
         navdata: &BitSlice,
     ) -> bool {
@@ -618,7 +618,7 @@ impl Key<Validated> {
         &self,
         tag0: &BitSlice,
         tag_gst: Gst,
-        prna: u8,
+        prna: Svn,
         navdata: &BitSlice,
     ) -> bool {
         // This is large enough to fit all the message for ADKD=0 and 12
@@ -633,11 +633,11 @@ impl Key<Validated> {
         &self,
         buffer: &mut [u8],
         gst: Gst,
-        prna: u8,
+        prna: Svn,
         ctr: u8,
         navdata: &BitSlice,
     ) -> usize {
-        buffer[0] = prna;
+        buffer[0] = u8::from(prna);
         Self::store_gst(&mut buffer[1..5], gst);
         buffer[5] = ctr;
         let remaining_bits = BitSlice::from_slice_mut(&mut buffer[6..]);
@@ -681,14 +681,14 @@ impl Key<Validated> {
     ///
     /// This returns `true` if the validation was succesful. Otherwise, it
     /// returns `false`.
-    pub fn validate_macseq<V>(&self, mack: &Mack<V>, prna: usize, gst_mack: Gst) -> bool {
+    pub fn validate_macseq<V>(&self, mack: &Mack<V>, prna: Svn, gst_mack: Gst) -> bool {
         // No MACLTs with FLEX tags are defined currently, so FLEX
         // tags are not taken into account. This will need to be
         // updated when FLEX tags are added to the MACLTs.
 
         // This is large enough if there are no FLEX tags
         let mut buffer = [0u8; 5];
-        buffer[0] = prna.try_into().unwrap();
+        buffer[0] = prna.into();
         Self::store_gst(&mut buffer[1..5], gst_mack);
         let num_bytes = 5;
         let mut macseq_buffer = [0u8; 2];
@@ -757,7 +757,7 @@ mod test {
         // Data corresponding to E21 on 2022-03-07 ~9:00 UTC
         let tag0 = BitSlice::from_slice(&hex!("8f 54 58 88 71"));
         let tag0_gst = Gst::new(1176, 121050);
-        let prna = 21;
+        let prna = Svn::try_from(21).unwrap();
         let chain = test_chain();
         let key = Key::from_slice(
             &hex!("19 58 e7 76 6f b4 08 cb d6 a8 de fc e4 c7 d5 66"),
@@ -804,7 +804,7 @@ mod test {
     #[test]
     fn adkd() {
         let mack = test_mack();
-        let prna = 19;
+        let prna = Svn::try_from(19).unwrap();
         for j in 1..mack.num_tags() {
             assert!(test_chain()
                 .validate_adkd(j, mack.tag_and_info(j), prna, Gst::new(1176, 121050))
@@ -816,7 +816,7 @@ mod test {
     fn macseq() {
         let key = test_key().force_valid();
         let mack = test_mack();
-        let prna = 19;
+        let prna = Svn::try_from(19).unwrap();
         assert!(key.validate_macseq(&mack, prna, Gst::new(1176, 121050)));
     }
 }
