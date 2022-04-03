@@ -64,7 +64,7 @@ authentication status using the serial port.
 The UART0 port is routed to the JTAG pin header. See
 [this pinout diagram](https://longan.sipeed.com/assets/longan_nano_pinout_v1.1.0_w5676_h4000_large.png). The pins are identified as RX0 and TX0 in the diagram, and as R0 and T0 in the
 silkscreen of the board. The UART port uses 3V3 TTL levels. A suitable UART to USB
-converter should typically be used to connect the UART to the host computer.
+converter such as [this device](https://www.amazon.com/gp/product/B07D6LLX19) should typically be used to connect the UART to the host computer.
 
 ### Running the serial port client
 
@@ -81,7 +81,14 @@ The serial port client will send the INAV and OSNMA data to the board and print
 to the standard output all the lines received from the microcontroller through
 the UART. The UART communication is described below.
 
-After starting the serial port client, the microcontroller should be resetted or
+So, in the same way that navigation data can be piped to this application running on a local computer ([instructions](https://github.com/daniestevez/galileo-osnma#quick-start-using-galmon)), a web stream or 'live' data from a GNSS receiver can be piped to the [Longan nano](https://longan.sipeed.com/en/) via the [serial port client](https://github.com/daniestevez/galileo-osnma/tree/main/osnma-longan-nano-client).
+
+Example: (run from ~/galileo-osnma/osnma-longan-nano-client/target/release/)
+```
+nc 86.82.68.237 10000 | ./osnma-longan-nano-client /dev/ttyUSB0
+```
+
+After starting the serial port client, the microcontroller should be reset or
 powered on to start running the demo.
 
 ## Theory of operation
