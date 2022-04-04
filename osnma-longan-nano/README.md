@@ -83,10 +83,11 @@ the UART. The UART communication is described below.
 
 So, in the same way that navigation data can be piped to this application running on a local computer ([instructions](https://github.com/daniestevez/galileo-osnma#quick-start-using-galmon)), a web stream or 'live' data from a GNSS receiver can be piped to the [Longan nano](https://longan.sipeed.com/en/) via the [serial port client](https://github.com/daniestevez/galileo-osnma/tree/main/osnma-longan-nano-client).
 
-Example: (run from ~/galileo-osnma/osnma-longan-nano-client/target/release/)
+Example: (run from galileo-osnma/osnma-longan-nano-client/target/release/ & use correct /dev/tty* if different from /dev/ttyUSB0)
 ```
 nc 86.82.68.237 10000 | ./osnma-longan-nano-client /dev/ttyUSB0
 ```
+
 
 After starting the serial port client, the microcontroller should be reset or
 powered on to start running the demo.
