@@ -116,7 +116,7 @@ impl OsnmaInterface {
         for svn in Svn::iter() {
             if let Some(data) = self.osnma.get_ced_and_status(svn) {
                 some_adkd0 = true;
-                write!(&mut self.board.tx, " E{:02} TOW {}", svn, data.gst().tow()).unwrap();
+                write!(&mut self.board.tx, " {} TOW {}", svn, data.gst().tow()).unwrap();
             }
         }
         write!(
