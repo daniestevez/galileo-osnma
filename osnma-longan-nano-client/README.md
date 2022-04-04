@@ -17,5 +17,5 @@ cargo build --release
 
 ... and then run from the resulting path using the [demo instructions](https://github.com/daniestevez/galileo-osnma/tree/main/osnma-longan-nano):  
 ```
-~/galileo-osnma/osnma-longan-nano-client/target/release/
+galileo-osnma/osnma-longan-nano-client/target/release/
 ```
