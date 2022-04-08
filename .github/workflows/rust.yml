@@ -38,6 +38,20 @@ jobs:
     - name: Run tests
       run: cargo test --verbose --features galmon
 
+  msrv:
+    name: MSRV
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install toolchain
+      run: rustup install 1.56.0
+    - name: Doc
+      run: cargo +1.56.0 doc --features galmon
+    - name: Build
+      run: cargo +1.56.0 build --verbose --features galmon
+    - name: Run tests
+      run: cargo +1.56.0 test --verbose --features galmon
+
   galmon:
     name: Galmon
     runs-on: ubuntu-latest

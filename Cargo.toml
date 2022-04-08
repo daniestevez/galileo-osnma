@@ -10,6 +10,9 @@ repository = "https://github.com/daniestevez/galileo-osnma/"
 keywords = ["galileo", "gnss", "osnma", "authentication", "cryptography"]
 categories = ["aerospace::space-protocols", "authentication", "embedded", "no-std"]
 exclude = ["/.github"]
+rust-version = "1.56.0"
+
+[package.metadata]
 
 [features]
 # Galmon protobuf transport format support
