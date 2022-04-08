@@ -55,7 +55,7 @@ macro_rules! impl_conv {
                     let val = NonZeroU8::new(u8::try_from(value).unwrap()).unwrap();
                     Ok(Svn(val))
                 } else {
-                    Err(SvnError::OutOfRange)
+                    Err(SvnError {})
                 }
             }
         }
@@ -86,19 +86,14 @@ impl fmt::Display for Svn {
 
 /// SVN construction error.
 ///
-/// This represents the errors that can happen during the construction of and
-/// [`Svn`].
+/// The construction of an [`Svn`] can only fail if the given SVN value is
+/// outside of the allowed range 1-36.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-pub enum SvnError {
-    /// The value is outside the range 1-36.
-    OutOfRange,
-}
+pub struct SvnError;
 
 impl fmt::Display for SvnError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SvnError::OutOfRange => "SVN out of range 1-36".fmt(f),
-        }
+        "SVN out of range 1-36".fmt(f)
     }
 }
 
@@ -111,7 +106,7 @@ mod test {
 
     #[test]
     fn from_int() {
-        let error = Err(SvnError::OutOfRange);
+        let error = Err(SvnError {});
 
         for j in 1..=NUM_SVNS {
             assert!(Svn::try_from(j).is_ok());
