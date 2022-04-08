@@ -94,6 +94,17 @@ pub enum SvnError {
     OutOfRange,
 }
 
+impl fmt::Display for SvnError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SvnError::OutOfRange => "SVN out of range 1-36".fmt(f),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for SvnError {}
+
 #[cfg(test)]
 mod test {
     use super::*;
