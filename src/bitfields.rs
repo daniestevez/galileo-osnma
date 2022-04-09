@@ -620,6 +620,27 @@ pub enum MackValidationError {
     },
 }
 
+impl fmt::Display for MackValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MackValidationError::WrongMacseq => "incorrect MACSEQ field".fmt(f),
+            MackValidationError::WrongAdkd { tag_index, error } => {
+                write!(f, "incorrect ADKD field at tag {} ({})", tag_index, error)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for MackValidationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            MackValidationError::WrongMacseq => None,
+            MackValidationError::WrongAdkd { error, .. } => Some(error),
+        }
+    }
+}
+
 impl<'a, V: Clone> Mack<'a, V> {
     /// Gives an object representing one of the Tag-Info sections in the MACK message.
     ///

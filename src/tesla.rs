@@ -13,6 +13,7 @@ use crate::{Gst, Svn, Tow};
 use aes::Aes128;
 use bitvec::prelude::*;
 use cmac::Cmac;
+use core::fmt;
 use crypto_common::KeyInit;
 use hmac::{Hmac, Mac};
 use p256::ecdsa::VerifyingKey;
@@ -264,6 +265,18 @@ pub enum ChainError {
     NmaDontUse,
 }
 
+impl fmt::Display for ChainError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ChainError::ReservedField => "reserved value present in some field".fmt(f),
+            ChainError::NmaDontUse => "NMA status is \"don't use\"".fmt(f),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for ChainError {}
+
 /// Errors produced during the validation of an ADKD field.
 ///
 /// This gives the errors that can happen during the validation of an ADKD field
@@ -281,6 +294,20 @@ pub enum AdkdCheckError {
     /// MAC look-up table entry.
     WrongPrnd,
 }
+
+impl fmt::Display for AdkdCheckError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AdkdCheckError::InvalidTagNumber => "invalid tag number".fmt(f),
+            AdkdCheckError::InvalidMaclt => "invalid MAC look-up table".fmt(f),
+            AdkdCheckError::WrongAdkd => "ADKD does not match MAC look-up table entry".fmt(f),
+            AdkdCheckError::WrongPrnd => "PRND field does not match MAC look-up table entry".fmt(f),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for AdkdCheckError {}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 enum AuthObject {
@@ -328,6 +355,20 @@ pub enum ValidationError {
     /// a maximum GST difference of 25 hours.
     TooManyDerivations,
 }
+
+impl fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ValidationError::WrongOneWayFunction => "derived key does not match".fmt(f),
+            ValidationError::DifferentChain => "keys belong to different chains".fmt(f),
+            ValidationError::DoesNotFollow => "key is older than validating key".fmt(f),
+            ValidationError::TooManyDerivations => "time difference between keys too large".fmt(f),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for ValidationError {}
 
 impl<V> Key<V> {
     /// Gives the GST at the start of the subframe when the key was transmitted.
@@ -429,7 +470,7 @@ impl Key<Validated> {
         pubkey: &VerifyingKey,
     ) -> Result<Key<Validated>, KrootValidationError> {
         let chain = Chain::from_dsm_kroot(nma_header, dsm_kroot)
-            .map_err(|_| KrootValidationError::WrongDsmKrootChain)?;
+            .map_err(KrootValidationError::WrongDsmKrootChain)?;
         if !dsm_kroot.check_padding(nma_header) {
             return Err(KrootValidationError::WrongDsmKrootPadding);
         }
@@ -455,12 +496,34 @@ pub enum KrootValidationError {
     /// A valid chain could not be extracted from the DSM-KROOT message.
     ///
     /// See [`ChainError`].
-    WrongDsmKrootChain,
+    WrongDsmKrootChain(ChainError),
     /// The check of the padding of the DSM-KROOT message was not successful.
     WrongDsmKrootPadding,
     /// The check of the ECDSA signature of the DSM-KROOT message was not
     /// successful.
     WrongEcdsa,
+}
+
+impl fmt::Display for KrootValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            KrootValidationError::WrongDsmKrootChain(e) => {
+                write!(f, "invalid chain in DSM-KROOT ({})", e)
+            }
+            KrootValidationError::WrongDsmKrootPadding => "incorrect padding in DSM-KROOT".fmt(f),
+            KrootValidationError::WrongEcdsa => "invalid ECDSA signature in DSM-KROOT".fmt(f),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for KrootValidationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            KrootValidationError::WrongDsmKrootChain(e) => Some(e),
+            KrootValidationError::WrongDsmKrootPadding | KrootValidationError::WrongEcdsa => None,
+        }
+    }
 }
 
 impl<V: Clone> Key<V> {
