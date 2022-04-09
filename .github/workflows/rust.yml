@@ -12,9 +12,9 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Format
-      run: cargo fmt --check
+      run: cargo fmt --all -- --check
     - name: Clippy
-      run: cargo clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
     - name: Doc
       run: cargo doc
     - name: Build
@@ -28,9 +28,9 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Format
-      run: cargo fmt --check
+      run: cargo fmt --all -- --check
     - name: Clippy
-      run: cargo clippy --features galmon
+      run: cargo clippy --all-targets --all-features -- -D warnings
     - name: Doc
       run: cargo doc --features galmon
     - name: Build
@@ -61,9 +61,9 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Format
-      run: cargo fmt --check
+      run: cargo fmt --all -- --check
     - name: Clippy
-      run: cargo clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
     - name: Build
       run: cargo build --verbose
     - name: Run tests
@@ -80,9 +80,9 @@ jobs:
     - name: Install riscv32imac Rust target
       run: rustup target add riscv32imac-unknown-none-elf
     - name: Format
-      run: cargo fmt --check
+      run: cargo fmt --all -- --check
     - name: Clippy
-      run: cargo clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
     - name: Build
       run: cargo build --release --verbose
 
@@ -99,9 +99,9 @@ jobs:
         sudo apt-get update
         sudo apt-get install libudev-dev
     - name: Format
-      run: cargo fmt --check
+      run: cargo fmt --all -- --check
     - name: Clippy
-      run: cargo clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
     - name: Build
       run: cargo build --verbose
     - name: Run tests

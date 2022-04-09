@@ -301,7 +301,7 @@ impl<S: StaticStorage> OsnmaData<S> {
         prna: Svn,
         gst_mack: Gst,
     ) -> Option<Mack<'a, Validated>> {
-        match mack.validate(key, prna.into(), gst_mack) {
+        match mack.validate(key, prna, gst_mack) {
             Err(e) => {
                 log::error!("error validating MACK {:?}: {:?}", mack, e);
                 None

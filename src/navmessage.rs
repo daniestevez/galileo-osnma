@@ -259,7 +259,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         if let Some(navdata) = self.ced_and_status_as_mut(prna, gst_navmessage) {
             // Try to validate tag0
             Self::validate_tag(
-                &key,
+                key,
                 mack.tag0(),
                 Adkd::InavCed,
                 gst_mack,
@@ -312,16 +312,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 } else {
                     prnd
                 };
-                Self::validate_tag(
-                    &key,
-                    tag.tag(),
-                    tag.adkd(),
-                    gst_mack,
-                    prnd,
-                    prna,
-                    j,
-                    navdata,
-                );
+                Self::validate_tag(key, tag.tag(), tag.adkd(), gst_mack, prnd, prna, j, navdata);
             }
         }
     }
@@ -367,16 +358,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 }
             };
             if let Some(navdata) = self.ced_and_status_as_mut(prnd_svn, gst_navmessage) {
-                Self::validate_tag(
-                    &key,
-                    tag.tag(),
-                    tag.adkd(),
-                    gst_mack,
-                    prnd,
-                    prna,
-                    j,
-                    navdata,
-                );
+                Self::validate_tag(key, tag.tag(), tag.adkd(), gst_mack, prnd, prna, j, navdata);
             }
         }
     }
