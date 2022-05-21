@@ -15,16 +15,16 @@ publish = false
 [dependencies]
 hex = { version = "0.4", default-features = false }
 galileo-osnma = { path = ".." }
-longan-nano = "0.2.0"
+longan-nano = "0.3.0"
 nb = "1.0"
-p256 = { version = "0.10", features = ["ecdsa"], default-features = false }
+p256 = { version = "0.11", features = ["ecdsa"], default-features = false }
 panic-halt = "0.2.0"
 riscv-rt = "0.8.0"
 
 [build-dependencies]
-ecdsa = { version = "0.13", features = ["pkcs8"] }
-p256 = { version = "0.10", features = ["ecdsa"] }
-spki = { version = "0.5", features = ["pem"] }
+ecdsa = { version = "0.14", features = ["pkcs8"] }
+p256 = { version = "0.11", features = ["ecdsa"] }
+spki = { version = "0.6", features = ["pem"] }
 
 [profile.release]
 opt-level = "z"  # Optimize for size.
