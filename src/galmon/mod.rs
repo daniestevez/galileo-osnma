@@ -13,6 +13,7 @@ pub mod navmon {
     //! The [prost](https://crates.io/crates/prost) crate is used to generate the
     //! code in this module.
     #![allow(missing_docs)]
+    #![allow(clippy::derive_partial_eq_without_eq)] // this should be fixed in prost
     include!(concat!(env!("OUT_DIR"), "/navmon_protobuf.rs"));
 }
 

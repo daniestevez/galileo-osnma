@@ -31,14 +31,14 @@ hmac = "0.12"
 log = "0.4"
 # This brings std with default-features
 p256 = { version = "0.11", features = ["ecdsa"], default-features = false }
-prost = { version = "0.10", optional = true }
+prost = { version = "0.11", optional = true }
 # These two bring std with default-features
 sha2 = { version = "0.10", default-features = false }
 sha3 = { version = "0.10", default-features = false }
 typenum = "1.15"
 
 [build-dependencies]
-prost-build = { version = "0.10", optional = true }
+prost-build = { version = "0.11", optional = true }
 
 [dev-dependencies]
 hex-literal = "0.3"
