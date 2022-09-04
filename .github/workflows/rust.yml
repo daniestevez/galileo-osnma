@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
+    - name: Install protoc
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
     - name: Format
       run: cargo fmt --all -- --check
     - name: Clippy
@@ -27,6 +31,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
+    - name: Install protoc
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
     - name: Format
       run: cargo fmt --all -- --check
     - name: Clippy
@@ -43,6 +51,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
+    - name: Install protoc
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
     - name: Install toolchain
       run: rustup install 1.57.0
     - name: Doc
@@ -60,6 +72,10 @@ jobs:
         working-directory: galmon-osnma
     steps:
     - uses: actions/checkout@v2
+    - name: Install protoc
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
     - name: Format
       run: cargo fmt --all -- --check
     - name: Clippy
@@ -94,10 +110,10 @@ jobs:
         working-directory: osnma-longan-nano-client
     steps:
     - uses: actions/checkout@v2
-    - name: Install libudev
+    - name: Install libudev and protoc
       run: |
         sudo apt-get update
-        sudo apt-get install libudev-dev
+        sudo apt-get install libudev-dev protobuf-compiler
     - name: Format
       run: cargo fmt --all -- --check
     - name: Clippy
