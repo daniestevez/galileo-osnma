@@ -62,7 +62,7 @@ fn main() -> std::io::Result<()> {
                         .unwrap_or(false)
                     {
                         log::info!(
-                            "new CED and status for E{:02} authenticated \
+                            "new CED and status for {} authenticated \
                                     (authbits = {}, GST = {:?})",
                             svn,
                             data.authbits(),
