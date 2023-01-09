@@ -15,7 +15,7 @@ publish = false
 
 [dependencies]
 ecdsa = { version = "0.14", features = ["pkcs8"] }
-env_logger = "0.9"
+env_logger = "0.10"
 galileo-osnma = { path = "..", features = ["galmon"] }
 log = "0.4"
 p256 = { version = "0.11", features = ["ecdsa"] }
