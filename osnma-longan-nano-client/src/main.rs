@@ -39,7 +39,7 @@ impl Serial {
             svn,
             gst.wn(),
             gst.tow(),
-            hex::encode(&inav)
+            hex::encode(inav)
         )?;
         Ok(())
     }
@@ -56,7 +56,7 @@ impl Serial {
             svn,
             gst.wn(),
             gst.tow(),
-            hex::encode(&osnma)
+            hex::encode(osnma)
         )?;
         Ok(())
     }

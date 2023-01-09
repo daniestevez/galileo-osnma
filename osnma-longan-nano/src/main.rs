@@ -94,12 +94,12 @@ impl OsnmaInterface {
         const OSNMA_BYTES: usize = HKROOT_SECTION_BYTES + MACK_SECTION_BYTES;
         if data.len() == INAV_WORD_BYTES * 2 {
             let mut inav = [0; INAV_WORD_BYTES];
-            hex::decode_to_slice(&data, &mut inav).unwrap();
+            hex::decode_to_slice(data, &mut inav).unwrap();
             write!(&mut self.board.tx, "INAV\r\n").unwrap();
             self.osnma.feed_inav(&inav, svn, gst);
         } else if data.len() == OSNMA_BYTES * 2 {
             let mut osnma = [0; OSNMA_BYTES];
-            hex::decode_to_slice(&data, &mut osnma).unwrap();
+            hex::decode_to_slice(data, &mut osnma).unwrap();
             write!(&mut self.board.tx, "OSNMA\r\n").unwrap();
             self.osnma.feed_osnma(&osnma, svn, gst);
         }

@@ -207,14 +207,9 @@ impl<S: StaticStorage> CollectNavMessage<S> {
 
     fn ced_and_status_as_mut(&mut self, svn: Svn, gst: Gst) -> Option<&mut CedAndStatus> {
         let gst_idx = self.find_gst(gst)?;
-        for item in
-            self.ced_and_status[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS].iter_mut()
-        {
-            if item.svn == Some(svn) && item.stale_counter == 0 && item.all_valid() {
-                return Some(item);
-            }
-        }
-        None
+        self.ced_and_status[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS]
+            .iter_mut()
+            .find(|item| item.svn == Some(svn) && item.stale_counter == 0 && item.all_valid())
     }
 
     fn timing_parameters_as_mut(&mut self, gst: Gst) -> Option<&mut TimingParameters> {
