@@ -10,10 +10,7 @@ use crate::validation::{NotValidated, Validated};
 use crate::{Gst, Svn, Wn};
 use bitvec::prelude::*;
 use core::fmt;
-use p256::ecdsa::{
-    signature::{Signature as SignatureTrait, Verifier},
-    Signature, VerifyingKey,
-};
+use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
 use sha2::{Digest, Sha256};
 
 /// NMA header.
@@ -483,7 +480,7 @@ impl<'a> DsmKroot<'a> {
     pub fn check_signature(&self, nma_header: NmaHeader, pubkey: &VerifyingKey) -> bool {
         let (message, size) = self.signature_message(nma_header);
         let message = &message[..size];
-        let signature = Signature::from_bytes(self.digital_signature())
+        let signature = Signature::from_bytes(self.digital_signature().into())
             .expect("error serializing ECDSA signature");
         pubkey.verify(message, &signature).is_ok()
     }

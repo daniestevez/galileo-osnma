@@ -31,6 +31,7 @@ impl Svn {
     /// Returns an iterator that iterates over the SVNs from E01 to E36 in
     /// increasing order.
     pub fn iter() -> impl Iterator<Item = Svn> {
+        #[allow(clippy::useless_conversion)]
         (1..=NUM_SVNS)
             .into_iter()
             .map(|x| Svn::try_from(x).unwrap())
