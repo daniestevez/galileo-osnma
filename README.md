@@ -22,7 +22,7 @@ for only 12 satellites in parallel is stored). This makes it possible to use the
 library in some embedded microcontrollers. A demo of galileo-osnma running in a
 [Longan nano](https://longan.sipeed.com/en/) GD32VF103 board is provided in the
 [osnma-longan-nano](https://github.com/daniestevez/galileo-osnma/tree/main/osnma-longan-nano)
-crate. This is a RISC-V microcontroller with 128 KiB of flash and 32 KiB of flash
+crate. This is a RISC-V microcontroller with 128 KiB of flash and 32 KiB of RAM
 that is similar to the popular STM32F103 ARM Cortex-M3 microcontroller.
 
 ## Documentation
