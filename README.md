@@ -34,9 +34,9 @@ The following reference documents from the Galileo system are relevant:
 
 * [Galileo OS SIS ICD v2.0](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OS_SIS_ICD_v2.0.pdf)
 
-* [Galileo OSNMA User ICD for Test Phase v1.0](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf)
+* [Galileo OSNMA SIS ICD v1.0](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.0.pdf)
 
-* [Galileo OSNMA Receiver Guidelines for Test Phase v1.0](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_Receiver_Guidelines_for_Test_Phase_v1.0.pdf)
+* [Galileo OSNMA Receiver Guidelines v1.0](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_Receiver_Guidelines_v1.0.pdf)
 
 ## Quick start using Galmon
 
@@ -49,11 +49,14 @@ A quick way to see this working is to use the Galmon Galileo navigation data
 feed, which streams from 86.82.68.237, TCP port 10000. From the `galmon-osnma`
 folder, we can run
 ```
-nc 86.82.68.237 10000 | RUST_LOG=info cargo run --release OSNMA_PublicKey_20210920133026.pem
+nc 86.82.68.237 10000 | RUST_LOG=info cargo run --release osnma-pubkey.pem
 ```
 to see galileo-osnma processing the OSNMA and navigation data streamed by Galmon.
 The [env_logger](https://docs.rs/env_logger/latest/env_logger/) documentation describes
 how the logging information produced by this application can be configured.
+
+The file `osnma-pubkey.pem` should contain the Galileo OSNMA public key. See the
+section below for how to obtain the key.
 
 Note that Galmon aggregates data from many receivers around the world, which is
 not the expected use case for galileo-osnma. Therefore, when running this,
@@ -62,26 +65,31 @@ there can be some small problems with data or timestamps inconsistencies.
 Alternatively, you can use one of the tools of Galmon with your own GNSS
 receiver. For instance, an uBlox receiver can be used as
 ```
-ubxtool --wait --port /dev/ttyACM0 --station 1 --stdout --galileo | RUST_LOG=info cargo run --release OSNMA_PublicKey_20210920133026.pem
+ubxtool --wait --port /dev/ttyACM0 --station 1 --stdout --galileo | RUST_LOG=info cargo run --release osnma-pubkey.pem
 ```
 
-The OSNMA ECDSA public key needs to be obtained to run this application. This
-can be downloaded from the
-[European GNSS Service Centre](https://www.gsc-europa.eu/)
-by
-[registering to the public observation test phase](https://www.gsc-europa.eu/support-to-developers/osnma-public-observation-test-phase/register).
-The registration takes a few days to be verified. The PEM file should only contain
-the public key, and not the elliptic curve parameters (the PEM file should only contain the
-`-----BEGIN PUBLIC KEY-----` line, the `-----END PUBLIC KEY-----` line, and the Base64
-data between these two lines).
+## Obtaining the Galileo OSNMA public key
+
+The OSNMA ECDSA public key needs to be obtained to run `galmon-osnma` and other
+example applications, as well as to make full use of the library. The key can be
+downloaded from the [European GNSS Service Centre](https://www.gsc-europa.eu/),
+under [GSC Products > OSNMA_PUBLICKEY](https://www.gsc-europa.eu/gsc-products/OSNMA/PKI).
+It is necessary to register an account to obtain the key.
+
+The key is downloaded in an x509 certificate. The current certificate file is
+`OSNMA_PublicKey_20230803105952_newPKID_1.crt`. The key in PEM format, as
+required by `galmon-osnma` can be extracted with
+```
+openssl x509 -in OSNMA_PublicKey_20230803105952_newPKID_1.crt  -noout -pubkey > osnma-pubkey.pem
+```
 
 ## Development status
 
-galileo-osnma already provides a solution that is usable during the puublic test
-phase of OSNMA. It can authenticate all the types of navigation data currently
-supported by OSNMA using the ECDSA P-256 public key. There are some
-features of the OSNMA protocol and some roadmap features that are not
-implemented yet. These are listed below.
+galileo-osnma has been usable since its first release during the public test
+phase of OSNMA, and now that the service phase has begun. phase of OSNMA. It
+can authenticate all the types of navigation data currently supported by OSNMA
+using the ECDSA P-256 public key. There are some features of the OSNMA protocol
+and some roadmap features that are not implemented yet. These are listed below.
 
 Supported features:
 
@@ -103,17 +111,16 @@ Supported features:
 Unsupported features:
 
 * Verification of DSM-KROOT using ECDSA P-521. A Rust implementation of this
-  elliptic curve is needed. This curve is currently not being used in the public test
-  phase of OSNMA.
+  elliptic curve is needed. This curve is currently not in use by the Galileo
+  OSNMA service phase.
 * Public key renewal. The parsing of DSM-PKR messages and the authentication
   using the Merkle tree is not implemented yet.
 * Change of TESLA chain scenarios. Currently it is assumed that there is only
   one TESLA chain being used. The handling of the scenarios defined in Section
-  5.5 of the
-  [OSNMA User ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf)
+  5.5 of the [Galileo OSNMA SIS ICD v1.0](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.0.pdf)
   is not implemented.
 * Flexible ADKDs in the MAC look-up table. These are not currently defined for
-  the OSNMA test phase.
+  in the [Galileo OSNMA SIS ICD v1.0](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.0.pdf).
 * Warm start, by loading a previously authenticated TESLA key.
 
 Roadmap features. These are not features of OSNMA itself, but will add to the
