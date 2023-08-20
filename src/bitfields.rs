@@ -586,6 +586,17 @@ impl<'a, V> Mack<'a, V> {
         self.data[self.tag_size()..self.tag_size() + macseq_size].load_be::<u16>()
     }
 
+    /// Gives the value of the COP field contained in the MACK header of the MACK message.
+    ///
+    /// See Figure 9 in the [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.0.pdf).
+    /// The COP is a 4-bit integer, which is returned as a `u8`.
+    pub fn cop(&self) -> u8 {
+        let macseq_size = 12;
+        let cop_offset = self.tag_size() + macseq_size;
+        let cop_size = 4;
+        self.data[cop_offset..cop_offset + cop_size].load_be::<u8>()
+    }
+
     /// Returns the number of tags in the MACK message.
     ///
     /// The number of tags is computed according to the tag size.
@@ -813,6 +824,14 @@ impl<'a, V> TagAndInfo<'a, V> {
             12 => Adkd::SlowMac,
             _ => Adkd::Reserved,
         }
+    }
+
+    /// Gives the value of the COP field in the Tag-Info section.
+    ///
+    /// The COP is a 4-bit integer, which is returned as a `u8`.
+    pub fn cop(&self) -> u8 {
+        let len = self.data.len();
+        self.data[len - 4..].load_be::<u8>()
     }
 }
 
