@@ -418,7 +418,7 @@ pub struct CedAndStatus {
     authbits: u16,
 }
 
-const TIMING_PARAMETERS_BYTES: usize = 21;
+const TIMING_PARAMETERS_BYTES: usize = 18;
 const TIMING_PARAMETERS_WORDS: usize = 2;
 
 #[doc(hidden)]
@@ -497,7 +497,7 @@ impl_common!(
     TimingParameters,
     TIMING_PARAMETERS_BYTES,
     TIMING_PARAMETERS_WORDS,
-    161,
+    141,
 );
 
 impl CedAndStatus {
@@ -603,21 +603,19 @@ impl TimingParameters {
             6 => {
                 if !self.valid[0] {
                     Self::log_word(word_type);
-                    // Note that the TOW field will be removed in a new version
-                    // of the ICD, so this will need to be updated.
-                    self.bits_as_mut()[..119].copy_from_bitslice(&word[6..125]);
+                    self.bits_as_mut()[..99].copy_from_bitslice(&word[6..105]);
                     self.valid[0] = true;
                 } else {
-                    Self::check_mismatch(word_type, svn, &self.bits()[..119], &word[6..125]);
+                    Self::check_mismatch(word_type, svn, &self.bits()[..99], &word[6..105]);
                 }
             }
             10 => {
                 if !self.valid[1] {
                     Self::log_word(word_type);
-                    self.bits_as_mut()[119..161].copy_from_bitslice(&word[86..128]);
+                    self.bits_as_mut()[99..141].copy_from_bitslice(&word[86..128]);
                     self.valid[1] = true;
                 } else {
-                    Self::check_mismatch(word_type, svn, &self.bits()[119..161], &word[86..128]);
+                    Self::check_mismatch(word_type, svn, &self.bits()[99..141], &word[86..128]);
                 }
             }
             _ => (),
