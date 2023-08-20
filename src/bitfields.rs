@@ -48,7 +48,7 @@ pub enum NmaStatus {
 /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ChainAndPubkeyStatus {
-    /// Reserved value (CPKS = 0, 6, 7).
+    /// Reserved value (CPKS = 0).
     Reserved,
     /// Nominal (CPKS = 1).
     Nominal,
@@ -60,6 +60,10 @@ pub enum ChainAndPubkeyStatus {
     NewPublicKey,
     /// Public key revoked (PKREV) (CPKS = 5).
     PublicKeyRevoked,
+    /// New Merkle tree (NMT) (CPKS = 6).
+    NewMerkleTree,
+    /// Alert Message (AM) (CPKS = 7)
+    AlertMessage,
 }
 
 impl<'a> NmaHeader<'a> {
@@ -86,13 +90,15 @@ impl<'a> NmaHeader<'a> {
     /// Gives the value of the CPKS (chain and public key status) field.
     pub fn chain_and_pubkey_status(&self) -> ChainAndPubkeyStatus {
         match self.bits()[4..7].load_be::<u8>() {
-            0 | 6 | 7 => ChainAndPubkeyStatus::Reserved,
+            0 => ChainAndPubkeyStatus::Reserved,
             1 => ChainAndPubkeyStatus::Nominal,
             2 => ChainAndPubkeyStatus::EndOfChain,
             3 => ChainAndPubkeyStatus::ChainRevoked,
             4 => ChainAndPubkeyStatus::NewPublicKey,
             5 => ChainAndPubkeyStatus::PublicKeyRevoked,
-            _ => unreachable!(), // we are only reading 3 bits
+            6 => ChainAndPubkeyStatus::NewMerkleTree,
+            7 => ChainAndPubkeyStatus::AlertMessage,
+            8.. => unreachable!(), // we are only reading 3 bits
         }
     }
 }
