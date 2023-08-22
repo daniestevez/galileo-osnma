@@ -2,7 +2,7 @@ use galileo_osnma::{
     galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport},
     storage::FullStorage,
     types::{BitSlice, NUM_SVNS},
-    Gst, Osnma, Svn, Wn,
+    Gst, InavBand, Osnma, Svn, Wn,
 };
 use p256::ecdsa::VerifyingKey;
 use spki::DecodePublicKey;
@@ -24,7 +24,7 @@ fn main() -> std::io::Result<()> {
 
     let mut read = ReadTransport::new(std::io::stdin());
     let mut osnma = Osnma::<FullStorage>::from_pubkey(pubkey, false);
-    let mut timing_parameters_gst: Option<Gst> = None;
+    let mut timing_parameters: [Option<[u8; 18]>; NUM_SVNS] = [None; NUM_SVNS];
     let mut ced_and_status_data: [Option<[u8; 69]>; NUM_SVNS] = [None; NUM_SVNS];
 
     loop {
@@ -33,6 +33,7 @@ fn main() -> std::io::Result<()> {
             inav @ GalileoInav {
                 contents: inav_word,
                 reserved1: osnma_data,
+                sigid: Some(sigid),
                 ..
             },
         ) = &packet.gi
@@ -44,8 +45,16 @@ fn main() -> std::io::Result<()> {
                 + Wn::try_from(inav.gnss_tow / secs_in_week).unwrap();
             let gst = Gst::new(wn, tow);
             let svn = Svn::try_from(inav.gnss_sv).unwrap();
+            let band = match sigid {
+                1 => InavBand::E1B,
+                5 => InavBand::E5B,
+                _ => {
+                    log::error!("INAV word received on non-INAV band: sigid = {}", sigid);
+                    continue;
+                }
+            };
 
-            osnma.feed_inav(inav_word[..].try_into().unwrap(), svn, gst);
+            osnma.feed_inav(inav_word[..].try_into().unwrap(), svn, gst, band);
             if let Some(osnma_data) = osnma_data {
                 osnma.feed_osnma(osnma_data[..].try_into().unwrap(), svn, gst);
             }
@@ -71,19 +80,23 @@ fn main() -> std::io::Result<()> {
                         ced_and_status_data[idx] = Some(data_bytes);
                     }
                 }
-            }
-
-            if let Some(data) = osnma.get_timing_parameters() {
-                if !timing_parameters_gst
-                    .map(|g| g == data.gst())
-                    .unwrap_or(false)
-                {
-                    log::info!(
-                        "new timing parameters authenticated (authbits = {}, GST = {:?})",
-                        data.authbits(),
-                        data.gst()
-                    );
-                    timing_parameters_gst = Some(data.gst());
+                if let Some(data) = osnma.get_timing_parameters(svn) {
+                    let mut data_bytes = [0u8; 18];
+                    let a = BitSlice::from_slice_mut(&mut data_bytes);
+                    let b = data.data();
+                    a[..b.len()].copy_from_bitslice(b);
+                    if !timing_parameters[idx]
+                        .map(|d| d == data_bytes)
+                        .unwrap_or(false)
+                    {
+                        log::info!(
+                            "new timing parameters for {} authenticated (authbits = {}, GST = {:?})",
+			    svn,
+                            data.authbits(),
+                            data.gst()
+			);
+                        timing_parameters[idx] = Some(data_bytes);
+                    }
                 }
             }
         }

@@ -232,12 +232,6 @@ impl Chain {
         assert!((adkd != Adkd::InavTiming) || (object == AuthObject::SelfAuth));
         if tag.adkd() != adkd {
             Err(AdkdCheckError::WrongAdkd)
-        } else if adkd == Adkd::InavTiming {
-            if tag.prnd() != Prnd::GalileoConstellation {
-                Err(AdkdCheckError::WrongPrnd)
-            } else {
-                Ok(())
-            }
         } else if let Prnd::GalileoSvid(prnd) = tag.prnd() {
             if object == AuthObject::SelfAuth && prnd != prna.try_into().unwrap() {
                 Err(AdkdCheckError::WrongPrnd)
@@ -247,7 +241,8 @@ impl Chain {
                 Err(AdkdCheckError::WrongPrnd)
             }
         } else {
-            unreachable!()
+            // tag.prnd() is not a Galileo SVID
+            Err(AdkdCheckError::WrongPrnd)
         }
     }
 }

@@ -5,7 +5,7 @@ use crate::navmessage::{CollectNavMessage, NavMessageData};
 use crate::storage::StaticStorage;
 use crate::subframe::CollectSubframe;
 use crate::tesla::Key;
-use crate::types::{HkrootMessage, InavWord, MackMessage, OsnmaDataMessage};
+use crate::types::{HkrootMessage, InavBand, InavWord, MackMessage, OsnmaDataMessage};
 use crate::validation::{NotValidated, Validated};
 use crate::{Gst, Svn};
 
@@ -23,7 +23,7 @@ use p256::ecdsa::VerifyingKey;
 /// # Examples
 ///
 /// ```
-/// use galileo_osnma::{Gst, Osnma, Svn};
+/// use galileo_osnma::{Gst, InavBand, Osnma, Svn};
 /// use galileo_osnma::storage::FullStorage;
 /// use p256::ecdsa::VerifyingKey;
 ///
@@ -43,9 +43,10 @@ use p256::ecdsa::VerifyingKey;
 /// // Feed some INAV and OSNMA data. Data full of zeros is used here.
 /// let svn = Svn::try_from(12).unwrap(); // E12
 /// let gst = Gst::new(1177, 175767); // WN 1177, TOW 175767
+/// let band = InavBand::E1B;
 /// let inav = [0; 16];
 /// let osnma_data = [0; 5];
-/// osnma.feed_inav(&inav, svn, gst);
+/// osnma.feed_inav(&inav, svn, gst, band);
 /// osnma.feed_osnma(&osnma_data, svn, gst);
 ///
 /// // Try to retrieve authenticated data
@@ -121,8 +122,10 @@ impl<S: StaticStorage> Osnma<S> {
     /// the INAV word. This should be obtained from the PRN used for tracking.
     ///
     /// The `gst` parameter gives the GST at the start of the INAV page transmission.
-    pub fn feed_inav(&mut self, word: &InavWord, svn: Svn, gst: Gst) {
-        self.data.data.navmessage.feed(word, svn, gst);
+    ///
+    /// The `band` parameter indicates the band in which the INAV word was received.
+    pub fn feed_inav(&mut self, word: &InavWord, svn: Svn, gst: Gst, band: InavBand) {
+        self.data.data.navmessage.feed(word, svn, gst, band);
     }
 
     /// Feed the OSNMA data message from an INAV page into the OSNMA black box.
@@ -155,14 +158,14 @@ impl<S: StaticStorage> Osnma<S> {
         self.data.data.navmessage.get_ced_and_status(svn)
     }
 
-    /// Try to get authenticated timing parameters for the Galileo constellation.
+    /// Try to get authenticated timing parameters for a satellite.
     ///
-    /// This will try to retrieve the most Galileo constellation timing
-    /// parameters data (ADKD=4) `svn` that is available in the OSNMA
-    /// storage. If the storage does not contain any authenticated timing
-    /// parameters data, this returns `None`.
-    pub fn get_timing_parameters(&self) -> Option<NavMessageData> {
-        self.data.data.navmessage.get_timing_parameters()
+    /// This will try to retrieve the most recent authenticated timing
+    /// parameters data (ADKD=4) for the satellite with SVN `svn` that is
+    /// available in the OSNMA storage. If the storage does not contain any
+    /// authenticated timing parameters data for this SVN, this returns `None`.
+    pub fn get_timing_parameters(&self, svn: Svn) -> Option<NavMessageData> {
+        self.data.data.navmessage.get_timing_parameters(svn)
     }
 }
 
