@@ -79,3 +79,14 @@ pub const NUM_SVNS: usize = 36;
 ///
 /// This is used in the DSM-KROOT message.
 pub type Towh = u8;
+
+/// Galileo band with INAV data.
+///
+/// This is used because for ADKD = 4 OSNMA only applies to INAV data received
+/// on E1B, so we need to be able to distinguish the band of INAV frames.
+pub enum InavBand {
+    /// E1B band.
+    E1B,
+    /// E5b band.
+    E5B,
+}

@@ -8,7 +8,7 @@
 use crate::bitfields::{Adkd, Mack};
 use crate::storage::StaticStorage;
 use crate::tesla::Key;
-use crate::types::{BitSlice, InavWord};
+use crate::types::{BitSlice, InavBand, InavWord};
 use crate::validation::Validated;
 use crate::{Gst, Svn};
 use bitvec::prelude::*;
@@ -25,7 +25,7 @@ const MIN_AUTHBITS: u16 = 80;
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct CollectNavMessage<S: StaticStorage> {
     ced_and_status: GenericArray<CedAndStatus, S::NavMessageDepthSats>,
-    timing_parameters: GenericArray<TimingParameters, S::NavMessageDepth>,
+    timing_parameters: GenericArray<TimingParameters, S::NavMessageDepthSats>,
     gsts: GenericArray<Option<Gst>, S::NavMessageDepth>,
     write_pointer: usize,
 }
@@ -82,7 +82,9 @@ impl<S: StaticStorage> CollectNavMessage<S> {
     /// the INAV word. This should be obtained from the PRN used for tracking.
     ///
     /// The `gst` parameter gives the GST at the start of the INAV page transmission.
-    pub fn feed(&mut self, word: &InavWord, svn: Svn, gst: Gst) {
+    ///
+    /// The `band` parameter indicates the band in which the INAV word was received.
+    pub fn feed(&mut self, word: &InavWord, svn: Svn, gst: Gst, band: InavBand) {
         log::trace!(
             "feeding INAV word = {:02x?} for {} GST {:?}",
             word,
@@ -92,6 +94,8 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         let gst = gst.gst_subframe();
         self.adjust_write_pointer(gst);
 
+        // CED
+        //
         // Search for best location to place this SVN
         let ced = self
             .current_ced_as_mut()
@@ -103,22 +107,37 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             })
             .unwrap();
         log::trace!(
-            "selected store with SVN {:?} and stale counter {}",
+            "selected CED store with SVN {:?} and stale counter {}",
             ced.svn,
             ced.stale_counter
         );
         ced.feed(word, svn);
-        self.timing_parameters[self.write_pointer].feed(word, svn);
+
+        // Timing parameters
+        //
+        // Search for best location to place this SVN
+        let timing_parameters = self
+            .current_timing_parameters_as_mut()
+            .iter_mut()
+            .max_by_key(|x| match x.svn {
+                Some(s) if s == svn => u16::from(u8::MAX) + 2,
+                None => u16::from(u8::MAX) + 1,
+                _ => u16::from(x.stale_counter),
+            })
+            .unwrap();
+        log::trace!(
+            "selected timing parameters store with SVN {:?} and stale counter {}",
+            timing_parameters.svn,
+            timing_parameters.stale_counter,
+        );
+        timing_parameters.feed(word, svn, band);
     }
 
     fn adjust_write_pointer(&mut self, gst: Gst) {
-        // If write pointer points to a valid GST which is distinct
-        // from the current, we advance the write pointer and copy
-        // the old CED and status to the new write pointer location.
-        // We increase the stale counter of the copy.
-        // The timing parameters are not copied. Since all the satellites
-        // transmit this information, it is very likely that in this subframe
-        // we are able to gather the two required words.
+        // If write pointer points to a valid GST which is distinct from the
+        // current, we advance the write pointer and copy the old CED and status
+        // and timing parameters to the new write pointer location. We increase
+        // the stale counter of the copy.
         if let Some(g) = self.gsts[self.write_pointer] {
             if g != gst {
                 log::trace!(
@@ -132,7 +151,10 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                     self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS,
                     new_pointer * S::NUM_SATS,
                 );
-                self.timing_parameters[new_pointer].reset();
+                self.timing_parameters.copy_within(
+                    self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS,
+                    new_pointer * S::NUM_SATS,
+                );
                 self.write_pointer = new_pointer;
                 self.increase_stale_counter();
             }
@@ -145,9 +167,17 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             [self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS]
     }
 
+    fn current_timing_parameters_as_mut(&mut self) -> &mut [TimingParameters] {
+        &mut self.timing_parameters
+            [self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS]
+    }
+
     fn increase_stale_counter(&mut self) {
         for ced in self.current_ced_as_mut().iter_mut() {
             ced.stale_counter = ced.stale_counter.saturating_add(1);
+        }
+        for timing_parameters in self.current_timing_parameters_as_mut().iter_mut() {
+            timing_parameters.stale_counter = timing_parameters.stale_counter.saturating_add(1);
         }
     }
 
@@ -182,24 +212,31 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         None
     }
 
-    /// Try to get authenticated timing parameters for the Galileo constellation.
+    /// Try to get authenticated timing parameters for a satellite.
     ///
-    /// This will try to retrieve the most Galileo constellation timing
-    /// parameters data (ADKD=4) `svn` that is available in the OSNMA
+    /// This will try to retrieve the most recent timing parameters data
+    /// (ADKD=4) for the satellite with SNV`svn` that is available in the OSNMA
     /// storage. If the storage does not contain any authenticated timing
-    /// parameters data, this returns `None`.
-    pub fn get_timing_parameters(&self) -> Option<NavMessageData> {
+    /// parameters data for this SVN, this returns `None`.
+    pub fn get_timing_parameters(&self, svn: Svn) -> Option<NavMessageData> {
         // Search in order of decreasing Gst
         for j in 0..S::NavMessageDepth::USIZE {
-            let idx =
+            let gst_idx =
                 (S::NavMessageDepth::USIZE + self.write_pointer - j) % S::NavMessageDepth::USIZE;
-            let item = &self.timing_parameters[idx];
-            if item.all_valid() && item.authbits >= MIN_AUTHBITS {
-                return Some(NavMessageData {
-                    data: item.message_bits(),
-                    authbits: item.authbits,
-                    gst: self.gsts[idx].unwrap(),
-                });
+            for item in
+                self.timing_parameters[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS].iter()
+            {
+                if item.svn == Some(svn)
+                    && item.stale_counter == 0
+                    && item.all_valid()
+                    && item.authbits >= MIN_AUTHBITS
+                {
+                    return Some(NavMessageData {
+                        data: item.message_bits(),
+                        authbits: item.authbits,
+                        gst: self.gsts[gst_idx].unwrap(),
+                    });
+                }
             }
         }
         None
@@ -212,14 +249,11 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             .find(|item| item.svn == Some(svn) && item.stale_counter == 0 && item.all_valid())
     }
 
-    fn timing_parameters_as_mut(&mut self, gst: Gst) -> Option<&mut TimingParameters> {
-        let idx = self.find_gst(gst)?;
-        let item = &mut self.timing_parameters[idx];
-        if item.all_valid() {
-            Some(item)
-        } else {
-            None
-        }
+    fn timing_parameters_as_mut(&mut self, svn: Svn, gst: Gst) -> Option<&mut TimingParameters> {
+        let gst_idx = self.find_gst(gst)?;
+        self.timing_parameters[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS]
+            .iter_mut()
+            .find(|item| item.svn == Some(svn) && item.stale_counter == 0 && item.all_valid())
     }
 
     fn find_gst(&self, gst: Gst) -> Option<usize> {
@@ -288,10 +322,19 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                         None
                     }
                 },
-                Adkd::InavTiming => self.timing_parameters_as_mut(gst_navmessage).map(|x| {
-                    let y: &mut dyn AuthBits = x;
-                    y
-                }),
+                Adkd::InavTiming => match Svn::try_from(prnd) {
+                    Ok(prnd_svn) => {
+                        self.timing_parameters_as_mut(prnd_svn, gst_navmessage)
+                            .map(|x| {
+                                let y: &mut dyn AuthBits = x;
+                                y
+                            })
+                    }
+                    Err(_) => {
+                        log::error!("invalid PRND {:?} for ADKD {:?}", tag.prnd(), tag.adkd());
+                        None
+                    }
+                },
                 Adkd::SlowMac => {
                     // Slow MAC is not processed here, because the key doesn't
                     // have the appropriate extra delay
@@ -302,11 +345,6 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                     None
                 }
             } {
-                let prnd = if tag.adkd() == Adkd::InavTiming {
-                    u8::from(prna)
-                } else {
-                    prnd
-                };
                 Self::validate_tag(key, tag.tag(), tag.adkd(), gst_mack, prnd, prna, j, navdata);
             }
         }
@@ -427,6 +465,8 @@ const TIMING_PARAMETERS_WORDS: usize = 2;
 pub struct TimingParameters {
     data: [u8; TIMING_PARAMETERS_BYTES],
     valid: [bool; TIMING_PARAMETERS_WORDS],
+    svn: Option<Svn>,
+    stale_counter: u8,
     authbits: u16,
 }
 
@@ -498,6 +538,8 @@ impl_common!(
     TIMING_PARAMETERS_BYTES,
     TIMING_PARAMETERS_WORDS,
     141,
+    svn <= None,
+    stale_counter <= u8::MAX
 );
 
 impl CedAndStatus {
@@ -596,27 +638,26 @@ impl CedAndStatus {
 }
 
 impl TimingParameters {
-    fn feed(&mut self, word: &InavWord, svn: Svn) {
+    fn feed(&mut self, word: &InavWord, svn: Svn, band: InavBand) {
+        match self.svn {
+            Some(s) if s == svn => (),
+            None => self.svn = Some(svn),
+            _ => {
+                self.reset();
+                self.svn = Some(svn);
+            }
+        };
+
         let word = BitSlice::from_slice(word);
         let word_type = word[..6].load_be::<u8>();
-        match word_type {
-            6 => {
-                if !self.valid[0] {
-                    Self::log_word(word_type);
-                    self.bits_as_mut()[..99].copy_from_bitslice(&word[6..105]);
-                    self.valid[0] = true;
-                } else {
-                    Self::check_mismatch(word_type, svn, &self.bits()[..99], &word[6..105]);
-                }
+        match (word_type, band) {
+            (6, InavBand::E1B) => {
+                Self::log_word(word_type);
+                self.try_copy(0..99, &word[6..105], 0);
             }
-            10 => {
-                if !self.valid[1] {
-                    Self::log_word(word_type);
-                    self.bits_as_mut()[99..141].copy_from_bitslice(&word[86..128]);
-                    self.valid[1] = true;
-                } else {
-                    Self::check_mismatch(word_type, svn, &self.bits()[99..141], &word[86..128]);
-                }
+            (10, InavBand::E1B) => {
+                Self::log_word(word_type);
+                self.try_copy(99..141, &word[86..128], 1);
             }
             _ => (),
         }
@@ -626,20 +667,18 @@ impl TimingParameters {
         );
     }
 
-    fn log_word(word_type: u8) {
-        log::trace!("TimingParameters storing INAV word type {}", word_type);
+    fn try_copy(&mut self, dest_range: core::ops::Range<usize>, source: &BitSlice, idx: usize) {
+        self.stale_counter = 0;
+        let valid = self.valid[idx];
+        let dest = &mut self.bits_as_mut()[dest_range];
+        if !valid || dest != source {
+            dest.copy_from_bitslice(source);
+            self.authbits = 0;
+            self.valid[idx] = true;
+        }
     }
 
-    fn check_mismatch(word_type: u8, svn: Svn, stored: &BitSlice, received: &BitSlice) {
-        if stored != received {
-            log::warn!(
-                "received word {} from {} doesn't match word stored for the same subframe\
-                        (received = {:?}, stored = {:?}",
-                word_type,
-                svn,
-                received,
-                stored
-            );
-        }
+    fn log_word(word_type: u8) {
+        log::trace!("TimingParameters storing INAV word type {}", word_type);
     }
 }
