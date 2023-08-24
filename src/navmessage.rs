@@ -103,13 +103,13 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             .max_by_key(|x| match x.svn {
                 Some(s) if s == svn => u16::from(u8::MAX) + 2,
                 None => u16::from(u8::MAX) + 1,
-                _ => u16::from(x.stale_counter),
+                _ => u16::from(x.max_age()),
             })
             .unwrap();
         log::trace!(
-            "selected CED store with SVN {:?} and stale counter {}",
+            "selected CED store with SVN {:?} and age {}",
             ced.svn,
-            ced.stale_counter
+            ced.max_age()
         );
         ced.feed(word, svn);
 
@@ -122,13 +122,13 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             .max_by_key(|x| match x.svn {
                 Some(s) if s == svn => u16::from(u8::MAX) + 2,
                 None => u16::from(u8::MAX) + 1,
-                _ => u16::from(x.stale_counter),
+                _ => u16::from(x.max_age()),
             })
             .unwrap();
         log::trace!(
-            "selected timing parameters store with SVN {:?} and stale counter {}",
+            "selected timing parameters store with SVN {:?} and age {}",
             timing_parameters.svn,
-            timing_parameters.stale_counter,
+            timing_parameters.max_age(),
         );
         timing_parameters.feed(word, svn, band);
     }
@@ -156,7 +156,34 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                     new_pointer * S::NUM_SATS,
                 );
                 self.write_pointer = new_pointer;
-                self.increase_stale_counter();
+                self.increase_age();
+                if log::log_enabled!(log::Level::Debug) {
+                    log::debug!("advanced write pointer to {:?}", gst);
+                    log::debug!("CedAndStatus contents:");
+                    for elem in self.ced_and_status
+                        [self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS]
+                        .iter()
+                    {
+                        log::debug!(
+                            "SVN {:?}: age {:?} authbits {}",
+                            elem.svn,
+                            elem.age,
+                            elem.authbits
+                        );
+                    }
+                    log::debug!("TimingParameters contents:");
+                    for elem in self.timing_parameters
+                        [self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS]
+                        .iter()
+                    {
+                        log::debug!(
+                            "SVN {:?}: age {:?} authbits {}",
+                            elem.svn,
+                            elem.age,
+                            elem.authbits
+                        );
+                    }
+                }
             }
         }
         self.gsts[self.write_pointer] = Some(gst);
@@ -172,12 +199,16 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             [self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS]
     }
 
-    fn increase_stale_counter(&mut self) {
+    fn increase_age(&mut self) {
         for ced in self.current_ced_as_mut().iter_mut() {
-            ced.stale_counter = ced.stale_counter.saturating_add(1);
+            for age in ced.age.iter_mut() {
+                *age = age.saturating_add(1);
+            }
         }
         for timing_parameters in self.current_timing_parameters_as_mut().iter_mut() {
-            timing_parameters.stale_counter = timing_parameters.stale_counter.saturating_add(1);
+            for age in timing_parameters.age.iter_mut() {
+                *age = age.saturating_add(1);
+            }
         }
     }
 
@@ -196,11 +227,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             for item in
                 self.ced_and_status[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS].iter()
             {
-                if item.svn == Some(svn)
-                    && item.stale_counter == 0
-                    && item.all_valid()
-                    && item.authbits >= MIN_AUTHBITS
-                {
+                if item.svn == Some(svn) && item.authbits >= MIN_AUTHBITS {
                     return Some(NavMessageData {
                         data: item.message_bits(),
                         authbits: item.authbits,
@@ -226,11 +253,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             for item in
                 self.timing_parameters[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS].iter()
             {
-                if item.svn == Some(svn)
-                    && item.stale_counter == 0
-                    && item.all_valid()
-                    && item.authbits >= MIN_AUTHBITS
-                {
+                if item.svn == Some(svn) && item.authbits >= MIN_AUTHBITS {
                     return Some(NavMessageData {
                         data: item.message_bits(),
                         authbits: item.authbits,
@@ -242,18 +265,32 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         None
     }
 
-    fn ced_and_status_as_mut(&mut self, svn: Svn, gst: Gst) -> Option<&mut CedAndStatus> {
+    fn find_ced_and_status(&mut self, svn: Svn, gst: Gst) -> Option<&CedAndStatus> {
         let gst_idx = self.find_gst(gst)?;
         self.ced_and_status[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS]
-            .iter_mut()
-            .find(|item| item.svn == Some(svn) && item.stale_counter == 0 && item.all_valid())
+            .iter()
+            .find(|item| item.svn == Some(svn))
     }
 
-    fn timing_parameters_as_mut(&mut self, svn: Svn, gst: Gst) -> Option<&mut TimingParameters> {
+    fn find_timing_parameters(&mut self, svn: Svn, gst: Gst) -> Option<&TimingParameters> {
         let gst_idx = self.find_gst(gst)?;
         self.timing_parameters[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS]
-            .iter_mut()
-            .find(|item| item.svn == Some(svn) && item.stale_counter == 0 && item.all_valid())
+            .iter()
+            .find(|item| item.svn == Some(svn))
+    }
+
+    fn ced_and_status_iter_authbits_mut(&mut self) -> impl Iterator<Item = &mut dyn AuthBits> {
+        self.ced_and_status.iter_mut().map(|x| {
+            let y: &mut dyn AuthBits = x;
+            y
+        })
+    }
+
+    fn timing_parameters_iter_authbits_mut(&mut self) -> impl Iterator<Item = &mut dyn AuthBits> {
+        self.timing_parameters.iter_mut().map(|x| {
+            let y: &mut dyn AuthBits = x;
+            y
+        })
     }
 
     fn find_gst(&self, gst: Gst) -> Option<usize> {
@@ -284,24 +321,43 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         prna: Svn,
         gst_mack: Gst,
     ) {
+        log::info!("{} tag0 at {:?} COP = {}", prna, gst_mack, mack.cop());
         let gst_navmessage = gst_mack.add_seconds(-30);
-        if let Some(navdata) = self.ced_and_status_as_mut(prna, gst_navmessage) {
-            // Try to validate tag0
-            Self::validate_tag(
-                key,
-                mack.tag0(),
-                Adkd::InavCed,
-                gst_mack,
-                u8::from(prna),
-                prna,
-                0,
-                navdata,
-            );
+        if mack.cop() == 0 {
+            log::warn!("COP = 0 validation not implemented");
+        } else if let Some(&navdata) = self.find_ced_and_status(prna, gst_navmessage) {
+            if navdata.max_age().saturating_add(1) <= mack.cop() {
+                // Try to validate tag0
+                Self::validate_tag(
+                    key,
+                    mack.tag0(),
+                    Adkd::InavCed,
+                    gst_mack,
+                    u8::from(prna),
+                    prna,
+                    0,
+                    &navdata,
+                    self.ced_and_status_iter_authbits_mut(),
+                );
+            }
         }
 
         // Try to validate InavCed and InavTiming tags
         for j in 1..mack.num_tags() {
             let tag = mack.tag_and_info(j);
+            log::info!(
+                "{} tag{} {:?} at {:?} COP = {} PRND = {:?}",
+                prna,
+                j,
+                tag.adkd(),
+                gst_mack,
+                tag.cop(),
+                tag.prnd()
+            );
+            if tag.cop() == 0 {
+                log::warn!("COP = 0 validation not implemented");
+                continue;
+            }
             let prnd = match u8::try_from(tag.prnd()) {
                 Ok(p) => p,
                 Err(_) => {
@@ -309,43 +365,60 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                     continue;
                 }
             };
-            if let Some(navdata) = match tag.adkd() {
+            match tag.adkd() {
                 Adkd::InavCed => match Svn::try_from(prnd) {
-                    Ok(prnd_svn) => self
-                        .ced_and_status_as_mut(prnd_svn, gst_navmessage)
-                        .map(|x| {
-                            let y: &mut dyn AuthBits = x;
-                            y
-                        }),
+                    Ok(prnd_svn) => {
+                        if let Some(&navdata) = self.find_ced_and_status(prnd_svn, gst_navmessage) {
+                            if navdata.max_age().saturating_add(1) <= tag.cop() {
+                                Self::validate_tag(
+                                    key,
+                                    tag.tag(),
+                                    tag.adkd(),
+                                    gst_mack,
+                                    prnd,
+                                    prna,
+                                    j,
+                                    &navdata,
+                                    self.ced_and_status_iter_authbits_mut(),
+                                );
+                            }
+                        }
+                    }
                     Err(_) => {
                         log::error!("invalid PRND {:?} for ADKD {:?}", tag.prnd(), tag.adkd());
-                        None
                     }
                 },
                 Adkd::InavTiming => match Svn::try_from(prnd) {
                     Ok(prnd_svn) => {
-                        self.timing_parameters_as_mut(prnd_svn, gst_navmessage)
-                            .map(|x| {
-                                let y: &mut dyn AuthBits = x;
-                                y
-                            })
+                        if let Some(&navdata) =
+                            self.find_timing_parameters(prnd_svn, gst_navmessage)
+                        {
+                            if navdata.max_age().saturating_add(1) <= tag.cop() {
+                                Self::validate_tag(
+                                    key,
+                                    tag.tag(),
+                                    tag.adkd(),
+                                    gst_mack,
+                                    prnd,
+                                    prna,
+                                    j,
+                                    &navdata,
+                                    self.timing_parameters_iter_authbits_mut(),
+                                );
+                            }
+                        }
                     }
                     Err(_) => {
                         log::error!("invalid PRND {:?} for ADKD {:?}", tag.prnd(), tag.adkd());
-                        None
                     }
                 },
                 Adkd::SlowMac => {
                     // Slow MAC is not processed here, because the key doesn't
                     // have the appropriate extra delay
-                    None
                 }
                 Adkd::Reserved => {
                     log::error!("reserved ADKD in tag {:?}", tag);
-                    None
                 }
-            } {
-                Self::validate_tag(key, tag.tag(), tag.adkd(), gst_mack, prnd, prna, j, navdata);
             }
         }
     }
@@ -376,6 +449,9 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             if tag.adkd() != Adkd::SlowMac {
                 continue;
             }
+            if tag.cop() == 0 {
+                log::warn!("COP = 0 validation not implemented");
+            }
             let prnd = match u8::try_from(tag.prnd()) {
                 Ok(p) => p,
                 Err(_) => {
@@ -390,14 +466,26 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                     continue;
                 }
             };
-            if let Some(navdata) = self.ced_and_status_as_mut(prnd_svn, gst_navmessage) {
-                Self::validate_tag(key, tag.tag(), tag.adkd(), gst_mack, prnd, prna, j, navdata);
+            if let Some(&navdata) = self.find_ced_and_status(prnd_svn, gst_navmessage) {
+                if navdata.max_age().saturating_add(1) <= tag.cop() {
+                    Self::validate_tag(
+                        key,
+                        tag.tag(),
+                        tag.adkd(),
+                        gst_mack,
+                        prnd,
+                        prna,
+                        j,
+                        &navdata,
+                        self.ced_and_status_iter_authbits_mut(),
+                    );
+                }
             }
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn validate_tag(
+    fn validate_tag<'a>(
         key: &Key<Validated>,
         tag: &BitSlice,
         adkd: Adkd,
@@ -405,7 +493,8 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         prnd: u8,
         prna: Svn,
         tag_idx: usize,
-        navdata: &mut dyn AuthBits,
+        navdata: &dyn AuthBits,
+        to_add_authbits: impl Iterator<Item = &'a mut dyn AuthBits>,
     ) -> bool {
         let ctr = (tag_idx + 1).try_into().unwrap();
         let ret = match tag_idx {
@@ -421,7 +510,12 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 tag_idx,
                 prna
             );
-            navdata.add_authbits(tag);
+            for to_add in to_add_authbits {
+                if navdata.svn() == to_add.svn() && navdata.message_bits() == to_add.message_bits()
+                {
+                    to_add.add_authbits(tag);
+                }
+            }
         } else {
             log::error!(
                 "E{:02} {:?} at {:?} tag{} wrong (auth by {})",
@@ -450,9 +544,8 @@ const CED_AND_STATUS_WORDS: usize = 5;
 // This is pub only because it appears in the definition of StaticStorageTypenum
 pub struct CedAndStatus {
     data: [u8; CED_AND_STATUS_BYTES],
-    valid: [bool; CED_AND_STATUS_WORDS],
+    age: [u8; CED_AND_STATUS_WORDS],
     svn: Option<Svn>,
-    stale_counter: u8,
     authbits: u16,
 }
 
@@ -464,34 +557,33 @@ const TIMING_PARAMETERS_WORDS: usize = 2;
 // This is pub only because it appears in the definition of StaticStorageTypenum
 pub struct TimingParameters {
     data: [u8; TIMING_PARAMETERS_BYTES],
-    valid: [bool; TIMING_PARAMETERS_WORDS],
+    age: [u8; TIMING_PARAMETERS_WORDS],
     svn: Option<Svn>,
-    stale_counter: u8,
     authbits: u16,
 }
 
 trait AuthBits {
+    fn svn(&self) -> Option<Svn>;
     fn message_bits(&self) -> &BitSlice;
     fn add_authbits(&mut self, tag: &BitSlice);
 }
 
 macro_rules! impl_common {
-    ($s: ident, $data_size: expr, $num_words: expr, $num_bits: expr,
-     $($id: ident <= $val: expr),*) => {
+    ($s:ident, $data_size:expr, $num_words:expr, $num_bits:expr) => {
         impl $s {
             fn new() -> $s {
                 $s {
                     data: [0; $data_size],
-                    valid: [false; $num_words],
+                    age: [u8::MAX; $num_words],
                     authbits: 0,
-                    $($id: $val),*
+                    svn: None,
                 }
             }
 
             fn reset(&mut self) {
-                self.valid.fill(false);
+                self.age.fill(u8::MAX);
                 self.authbits = 0;
-                $(self.$id = $val);*
+                self.svn = None;
             }
 
             fn bits(&self) -> &BitSlice {
@@ -502,12 +594,46 @@ macro_rules! impl_common {
                 BitSlice::from_slice_mut(&mut self.data)
             }
 
-            fn all_valid(&self) -> bool {
-                self.valid.iter().all(|&x| x)
+            fn max_age(&self) -> u8 {
+                self.age.iter().copied().max().unwrap()
+            }
+
+            fn copy_word(
+                &mut self,
+                dest_range: core::ops::Range<usize>,
+                source: &BitSlice,
+                idx: usize,
+            ) {
+                self.age[idx] = 0;
+                let dest = &mut self.bits_as_mut()[dest_range];
+                if dest != source {
+                    dest.copy_from_bitslice(source);
+                    self.authbits = 0;
+                }
+            }
+
+            fn log_word(&self, word_type: u8) {
+                log::trace!(
+                    concat!(stringify!($s), " storing INAV word type {} for {}"),
+                    self.svn.unwrap(),
+                    word_type
+                );
+            }
+
+            fn log_age(&self) {
+                log::trace!(
+                    concat!(stringify!($s), " for {} age: {:?}"),
+                    self.svn.unwrap(),
+                    &self.age
+                );
             }
         }
 
         impl AuthBits for $s {
+            fn svn(&self) -> Option<Svn> {
+                self.svn
+            }
+
             fn message_bits(&self) -> &BitSlice {
                 &self.bits()[..$num_bits]
             }
@@ -529,17 +655,13 @@ impl_common!(
     CedAndStatus,
     CED_AND_STATUS_BYTES,
     CED_AND_STATUS_WORDS,
-    549,
-    svn <= None,
-    stale_counter <= u8::MAX
+    549
 );
 impl_common!(
     TimingParameters,
     TIMING_PARAMETERS_BYTES,
     TIMING_PARAMETERS_WORDS,
-    141,
-    svn <= None,
-    stale_counter <= u8::MAX
+    141
 );
 
 impl CedAndStatus {
@@ -555,85 +677,18 @@ impl CedAndStatus {
 
         let word = BitSlice::from_slice(word);
         let word_type = word[..6].load_be::<u8>();
-        let iodnav = word[6..16].load_be::<u16>();
         if (1..=5).contains(&word_type) {
-            Self::log_word(word_type);
+            self.log_word(word_type);
         }
         match word_type {
-            1 => self.try_copy(0..120, &word[6..126], 0, Some(iodnav)),
-            2 => self.try_copy(120..240, &word[6..126], 1, Some(iodnav)),
-            3 => self.try_copy(240..362, &word[6..128], 2, Some(iodnav)),
-            4 => self.try_copy(362..482, &word[6..126], 3, Some(iodnav)),
-            5 => self.try_copy(482..549, &word[6..73], 4, None),
+            1 => self.copy_word(0..120, &word[6..126], 0),
+            2 => self.copy_word(120..240, &word[6..126], 1),
+            3 => self.copy_word(240..362, &word[6..128], 2),
+            4 => self.copy_word(362..482, &word[6..126], 3),
+            5 => self.copy_word(482..549, &word[6..73], 4),
             _ => (),
         };
-        log::trace!(
-            "CedAndStatus has the following valid words: {:?}",
-            self.valid
-        );
-    }
-
-    fn try_copy(
-        &mut self,
-        dest_range: core::ops::Range<usize>,
-        source: &BitSlice,
-        idx: usize,
-        iodnav: Option<u16>,
-    ) {
-        // We mark as not stale regardless of whether we need
-        // overwrite with new data or whether the new data is
-        // equal to the old.
-        self.stale_counter = 0;
-        let valid = self.valid[idx];
-        let dest = &mut self.bits_as_mut()[dest_range];
-        if !valid || dest != source {
-            dest.copy_from_bitslice(source);
-            self.authbits = 0;
-            self.valid[idx] = true;
-            if let Some(iodnav) = iodnav {
-                self.new_iodnav(iodnav);
-                assert!(self.valid[idx]);
-            }
-        }
-    }
-
-    fn log_word(word_type: u8) {
-        log::trace!("CedAndStatus storing INAV word type {}", word_type);
-    }
-
-    // Invalidate all the words having an IODNAV different from
-    // the new IODNAV we have received.
-    fn new_iodnav(&mut self, iodnav: u16) {
-        log::trace!("received word with IODNAV {}", iodnav);
-        let old_iodnav = self.bits()[..10].load_be::<u16>();
-        if self.valid[0] && old_iodnav != iodnav {
-            self.valid[0] = false;
-            Self::log_erased(iodnav, old_iodnav, 1);
-        }
-        let old_iodnav = self.bits()[120..130].load_be::<u16>();
-        if self.valid[1] && old_iodnav != iodnav {
-            self.valid[1] = false;
-            Self::log_erased(iodnav, old_iodnav, 2);
-        }
-        let old_iodnav = self.bits()[240..250].load_be::<u16>();
-        if self.valid[2] && old_iodnav != iodnav {
-            self.valid[2] = false;
-            Self::log_erased(iodnav, old_iodnav, 3);
-        }
-        let old_iodnav = self.bits()[362..372].load_be::<u16>();
-        if self.valid[3] && old_iodnav != iodnav {
-            self.valid[4] = false;
-            Self::log_erased(iodnav, old_iodnav, 4);
-        }
-    }
-
-    fn log_erased(new_iodnav: u16, old_iodnav: u16, word: u8) {
-        log::trace!(
-            "erased word {} due to having old IODNAV {} (new IODNAV is {})",
-            word,
-            old_iodnav,
-            new_iodnav
-        );
+        self.log_age();
     }
 }
 
@@ -652,33 +707,15 @@ impl TimingParameters {
         let word_type = word[..6].load_be::<u8>();
         match (word_type, band) {
             (6, InavBand::E1B) => {
-                Self::log_word(word_type);
-                self.try_copy(0..99, &word[6..105], 0);
+                self.log_word(word_type);
+                self.copy_word(0..99, &word[6..105], 0);
             }
             (10, InavBand::E1B) => {
-                Self::log_word(word_type);
-                self.try_copy(99..141, &word[86..128], 1);
+                self.log_word(word_type);
+                self.copy_word(99..141, &word[86..128], 1);
             }
             _ => (),
         }
-        log::trace!(
-            "TimingParameters has the following valid words: {:?}",
-            self.valid
-        );
-    }
-
-    fn try_copy(&mut self, dest_range: core::ops::Range<usize>, source: &BitSlice, idx: usize) {
-        self.stale_counter = 0;
-        let valid = self.valid[idx];
-        let dest = &mut self.bits_as_mut()[dest_range];
-        if !valid || dest != source {
-            dest.copy_from_bitslice(source);
-            self.authbits = 0;
-            self.valid[idx] = true;
-        }
-    }
-
-    fn log_word(word_type: u8) {
-        log::trace!("TimingParameters storing INAV word type {}", word_type);
+        self.log_age();
     }
 }
