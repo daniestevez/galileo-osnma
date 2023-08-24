@@ -26,6 +26,7 @@ fn main() -> std::io::Result<()> {
     let mut osnma = Osnma::<FullStorage>::from_pubkey(pubkey, false);
     let mut timing_parameters: [Option<[u8; 18]>; NUM_SVNS] = [None; NUM_SVNS];
     let mut ced_and_status_data: [Option<[u8; 69]>; NUM_SVNS] = [None; NUM_SVNS];
+    let mut current_subframe = None;
 
     loop {
         let packet = read.read_packet()?;
@@ -44,6 +45,14 @@ fn main() -> std::io::Result<()> {
             let wn = Wn::try_from(inav.gnss_wn).unwrap()
                 + Wn::try_from(inav.gnss_tow / secs_in_week).unwrap();
             let gst = Gst::new(wn, tow);
+	    if let Some(current) = current_subframe {
+		if current > gst.gst_subframe() {
+		    // Avoid processing INAV word that are in a previous subframe
+		    log::warn!("dropping INAV word from previous subframe (current subframe {:?}, this INAV word {:?}", current, gst);
+		    continue;
+		}
+	    }
+	    current_subframe = Some(gst.gst_subframe());
             let svn = Svn::try_from(inav.gnss_sv).unwrap();
             let band = match sigid {
                 1 => InavBand::E1B,
