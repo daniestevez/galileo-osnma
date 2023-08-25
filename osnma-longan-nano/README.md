@@ -99,15 +99,15 @@ simple ASCII line-based protocol to communicate (the lines are terminated by CRL
 
 The client can send an INAV word by sending a line such as
 ```
-19 1176 120939 2a2aaaaaaaaaaaaaaaaaa80327fd4618
+19 1176 120939 1 2a2aaaaaaaaaaaaaaaaaa80327fd4618
 ```
 The first number indicates the SVN (E19), the second number indicates the week number,
-the third number indicates the time of week in seconds, and after this the data in the
-INAV word is included in hex.
+the third number indicates the time of week in seconds, the fourth number indicates the band,
+and after this the data in the INAV word is included in hex.
 
 Similarly, OSNMA data is sent by the client with a line such as
 ```
-19 1176 120939 6d0309ba0b
+19 1176 120939 1 6d0309ba0b
 ```
 
 The microcontroller indicates to the client that it is ready to receive a new piece
@@ -118,19 +118,20 @@ READY
 This implements a simple but effective flow control. After successfully receiving
 an INAV word, the microcontroller sends back
 ```
-E19 WN 1176 TOW 120939 INAV
+E19 WN 1176 TOW 120939 E1B INAV
 ```
 and after receiving OSNMA data it sends back
 ```
-E19 WN 1176 TOW 120939 OSNMA
+E19 WN 1176 TOW 120939 E1B OSNMA
 ```
 
 After receiving any piece of data, the microcontroller also reports the
 authentication status of the data it is holding on its storage memory. This is reported as
 ```
-AUTH ADKD=4 TOW 121110
+AUTH ADKD=4 TOW E18 121110 E27 TOW 121080
 ```
-indicating that successfully authenticated ADKD=4 corresponding to the subframe TOW 121110
+indicating that successfully authenticated ADKD=4 corresponding to the
+satellite E18 subframe TOW 121110 and satellite E27 subframe TOW 121080
 is now available, or as
 ```
 AUTH ADKD=4 NONE
