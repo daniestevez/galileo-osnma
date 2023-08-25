@@ -84,6 +84,7 @@ pub type Towh = u8;
 ///
 /// This is used because for ADKD = 4 OSNMA only applies to INAV data received
 /// on E1B, so we need to be able to distinguish the band of INAV frames.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum InavBand {
     /// E1B band.
     E1B,
