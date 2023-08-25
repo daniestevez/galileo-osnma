@@ -75,6 +75,7 @@ impl CollectSubframe {
         );
         let subframe = gst.tow() / SECONDS_PER_SUBFRAME;
         if gst.wn() != self.wn || subframe != self.subframe {
+            log::debug!("valid sections per SVN: {:?}", &self.num_valid);
             log::info!("starting collection of new subframe (GST {:?})", gst);
             self.wn = gst.wn();
             self.subframe = subframe;
