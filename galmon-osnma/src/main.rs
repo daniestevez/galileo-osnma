@@ -27,6 +27,7 @@ fn main() -> std::io::Result<()> {
     let mut timing_parameters: [Option<[u8; 18]>; NUM_SVNS] = [None; NUM_SVNS];
     let mut ced_and_status_data: [Option<[u8; 69]>; NUM_SVNS] = [None; NUM_SVNS];
     let mut current_subframe = None;
+    let mut last_tow_mod_30 = 0;
 
     loop {
         let packet = read.read_packet()?;
@@ -41,18 +42,43 @@ fn main() -> std::io::Result<()> {
         {
             // This is needed because sometimes we can see a TOW of 604801
             let secs_in_week = 604800;
-            let tow = inav.gnss_tow % secs_in_week;
+            let mut tow = inav.gnss_tow % secs_in_week;
             let wn = Wn::try_from(inav.gnss_wn).unwrap()
                 + Wn::try_from(inav.gnss_tow / secs_in_week).unwrap();
+
+            // Fix bug in Galmon data:
+            //
+            // Often, the E1B word 16 starting at TOW = 29 mod 30 will have the
+            // TOW of the previous word 16 in the subframe, which starts at TOW
+            // = 15 mod 30. We detect this condition by looking at the last tow
+            // mod 30 that we saw and fixing if needed.
+            if tow % 30 == 15 && last_tow_mod_30 >= 19 {
+                log::debug!(
+                    "fixing wrong for SVN {}; tow = {}, last tow mod 30 = {}",
+                    inav.gnss_sv,
+                    tow,
+                    last_tow_mod_30
+                );
+                tow += 29 - 15; // wn rollover is not possible by this addition
+            }
+            last_tow_mod_30 = tow % 30;
+
             let gst = Gst::new(wn, tow);
-	    if let Some(current) = current_subframe {
-		if current > gst.gst_subframe() {
-		    // Avoid processing INAV word that are in a previous subframe
-		    log::warn!("dropping INAV word from previous subframe (current subframe {:?}, this INAV word {:?}", current, gst);
-		    continue;
-		}
-	    }
-	    current_subframe = Some(gst.gst_subframe());
+            if let Some(current) = current_subframe {
+                if current > gst.gst_subframe() {
+                    // Avoid processing INAV word that are in a previous subframe
+                    log::warn!(
+                        "dropping INAV word from previous subframe (current subframe {:?}, \
+			 this INAV word {:?} SVN {} band {})",
+                        current,
+                        gst,
+                        inav.gnss_sv,
+                        sigid
+                    );
+                    continue;
+                }
+            }
+            current_subframe = Some(gst.gst_subframe());
             let svn = Svn::try_from(inav.gnss_sv).unwrap();
             let band = match sigid {
                 1 => InavBand::E1B,
