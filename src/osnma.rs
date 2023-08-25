@@ -53,7 +53,7 @@ use p256::ecdsa::VerifyingKey;
 /// // ADKD=0 and 12, CED and health status for a satellite
 /// let ced = osnma.get_ced_and_status(svn);
 /// // ADKD=4, Galileo constellation timing parameters
-/// let timing = osnma.get_timing_parameters();
+/// let timing = osnma.get_timing_parameters(svn);
 /// ```
 ///
 /// # Storage size
