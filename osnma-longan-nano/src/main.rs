@@ -6,7 +6,7 @@ use core::fmt::Write;
 use galileo_osnma::{
     storage::SmallStorage,
     types::{HKROOT_SECTION_BYTES, INAV_WORD_BYTES, MACK_SECTION_BYTES},
-    Gst, Osnma, Svn,
+    Gst, InavBand, Osnma, Svn,
 };
 use longan_nano::hal::{pac, prelude::*, serial};
 use nb::block;
@@ -88,15 +88,26 @@ impl OsnmaInterface {
         let svn = Svn::try_from(words.next().unwrap().parse::<usize>().unwrap()).unwrap();
         let wn = words.next().unwrap().parse::<u16>().unwrap();
         let tow = words.next().unwrap().parse::<u32>().unwrap();
+        let band_num = words.next().unwrap().parse::<u8>().unwrap();
+        let band = match band_num {
+            1 => InavBand::E1B,
+            5 => InavBand::E5B,
+            _ => panic!(),
+        };
         let gst = Gst::new(wn, tow);
         let data = words.next().unwrap();
-        write!(&mut self.board.tx, "{} WN {} TOW {} ", svn, wn, tow).unwrap();
+        write!(
+            &mut self.board.tx,
+            "{} WN {} TOW {} E{}B ",
+            svn, wn, tow, band_num
+        )
+        .unwrap();
         const OSNMA_BYTES: usize = HKROOT_SECTION_BYTES + MACK_SECTION_BYTES;
         if data.len() == INAV_WORD_BYTES * 2 {
             let mut inav = [0; INAV_WORD_BYTES];
             hex::decode_to_slice(data, &mut inav).unwrap();
             write!(&mut self.board.tx, "INAV\r\n").unwrap();
-            self.osnma.feed_inav(&inav, svn, gst);
+            self.osnma.feed_inav(&inav, svn, gst, band);
         } else if data.len() == OSNMA_BYTES * 2 {
             let mut osnma = [0; OSNMA_BYTES];
             hex::decode_to_slice(data, &mut osnma).unwrap();
@@ -106,11 +117,20 @@ impl OsnmaInterface {
     }
 
     fn print_auth_status(&mut self) {
-        write!(&mut self.board.tx, "AUTH ADKD=4 ").unwrap();
-        match self.osnma.get_timing_parameters() {
-            Some(data) => write!(&mut self.board.tx, "TOW {}\r\n", data.gst().tow()).unwrap(),
-            None => write!(&mut self.board.tx, "NONE\r\n").unwrap(),
+        write!(&mut self.board.tx, "AUTH ADKD=4").unwrap();
+        let mut some_adkd4 = false;
+        for svn in Svn::iter() {
+            if let Some(data) = self.osnma.get_timing_parameters(svn) {
+                some_adkd4 = true;
+                write!(&mut self.board.tx, " {} TOW {}", svn, data.gst().tow()).unwrap();
+            }
         }
+        write!(
+            &mut self.board.tx,
+            "{}\r\n",
+            if some_adkd4 { "" } else { " NONE" }
+        )
+        .unwrap();
         write!(&mut self.board.tx, "AUTH ADKD=0").unwrap();
         let mut some_adkd0 = false;
         for svn in Svn::iter() {

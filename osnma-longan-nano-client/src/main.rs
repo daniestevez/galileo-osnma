@@ -1,7 +1,7 @@
 use galileo_osnma::galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport};
 use galileo_osnma::{
     types::{InavWord, OsnmaDataMessage},
-    Gst, Wn,
+    Gst, InavBand, Wn,
 };
 use std::error::Error;
 use std::io::{BufRead, BufReader};
@@ -32,15 +32,31 @@ impl Serial {
         }
     }
 
-    fn send_inav(&mut self, inav: &InavWord, svn: usize, gst: Gst) -> Result<(), Box<dyn Error>> {
+    fn send_common(&mut self, svn: usize, gst: Gst, band: InavBand) -> Result<(), Box<dyn Error>> {
+        let band = match band {
+            InavBand::E1B => "1",
+            InavBand::E5B => "5",
+        };
         write!(
             &mut self.writer,
-            "{} {} {} {}\r\n",
+            "{} {} {} {} ",
             svn,
             gst.wn(),
             gst.tow(),
-            hex::encode(inav)
+            band,
         )?;
+        Ok(())
+    }
+
+    fn send_inav(
+        &mut self,
+        inav: &InavWord,
+        svn: usize,
+        gst: Gst,
+        band: InavBand,
+    ) -> Result<(), Box<dyn Error>> {
+        self.send_common(svn, gst, band)?;
+        write!(&mut self.writer, "{}\r\n", hex::encode(inav))?;
         Ok(())
     }
 
@@ -49,15 +65,10 @@ impl Serial {
         osnma: &OsnmaDataMessage,
         svn: usize,
         gst: Gst,
+        band: InavBand,
     ) -> Result<(), Box<dyn Error>> {
-        write!(
-            &mut self.writer,
-            "{} {} {} {}\r\n",
-            svn,
-            gst.wn(),
-            gst.tow(),
-            hex::encode(osnma)
-        )?;
+        self.send_common(svn, gst, band)?;
+        write!(&mut self.writer, "{}\r\n", hex::encode(osnma))?;
         Ok(())
     }
 }
@@ -74,6 +85,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             inav @ GalileoInav {
                 contents: inav_word,
                 reserved1: osnma_data,
+                sigid: Some(sigid),
                 ..
             },
         ) = &packet.gi
@@ -85,12 +97,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                 + Wn::try_from(inav.gnss_tow / secs_in_week).unwrap();
             let gst = Gst::new(wn, tow);
             let svn = usize::try_from(inav.gnss_sv).unwrap();
+            let band = match sigid {
+                1 => InavBand::E1B,
+                5 => InavBand::E5B,
+                _ => {
+                    continue;
+                }
+            };
 
             serial.read_until_ready()?;
-            serial.send_inav(inav_word[..].try_into().unwrap(), svn, gst)?;
+            serial.send_inav(inav_word[..].try_into().unwrap(), svn, gst, band)?;
             if let Some(osnma_data) = osnma_data {
                 serial.read_until_ready()?;
-                serial.send_osnma(osnma_data[..].try_into().unwrap(), svn, gst)?;
+                serial.send_osnma(osnma_data[..].try_into().unwrap(), svn, gst, band)?;
             }
         }
     }
