@@ -22,9 +22,6 @@
 //! Users can define additional storage sizes by implementing the [`StaticStorage`]
 //! trait on their own types.
 
-use crate::mack::Mack;
-use crate::navmessage::{CedAndStatus, TimingParameters};
-use crate::Gst;
 use generic_array::ArrayLength;
 
 /// Auxiliary trait for generic array sizes.
@@ -39,10 +36,7 @@ pub trait StaticStorageTypenum:
     + core::fmt::Debug
     + core::cmp::PartialEq
     + core::cmp::Eq
-    + ArrayLength<CedAndStatus>
-    + ArrayLength<TimingParameters>
-    + ArrayLength<Option<Gst>>
-    + ArrayLength<Option<Mack>>
+    + ArrayLength
 {
 }
 
@@ -55,10 +49,7 @@ impl<T> StaticStorageTypenum for T where
         + core::fmt::Debug
         + core::cmp::PartialEq
         + core::cmp::Eq
-        + ArrayLength<CedAndStatus>
-        + ArrayLength<TimingParameters>
-        + ArrayLength<Option<Gst>>
-        + ArrayLength<Option<Mack>>
+        + ArrayLength
 {
 }
 
