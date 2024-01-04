@@ -4,7 +4,7 @@
 //! the messages used by OSNMA. As a general rule, the structures are a wrapper
 //! over a `&[u8]` or `&[u8; N]`.
 
-use crate::tesla::{AdkdCheckError, Key};
+use crate::tesla::{AdkdCheckError, Key, MacseqCheckError};
 use crate::types::{BitSlice, MackMessage, Towh, MACK_MESSAGE_BYTES};
 use crate::validation::{NotValidated, Validated};
 use crate::{Gst, Svn, Wn};
@@ -620,11 +620,11 @@ impl<'a, V> Mack<'a, V> {
 /// validation using [`Mack::validate`] is attempted.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum MackValidationError {
-    /// The MACSEQ field is not correct.
+    /// The MACSEQ field could not be verified.
     ///
     /// The MACSEQ field is checked using the algorithm in Section 6.6 of the
     /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
-    WrongMacseq,
+    MacseqError(MacseqCheckError),
     /// One of the ADKD fields is not correct.
     WrongAdkd {
         /// The index of the first tag whose ADKD is not correct.
@@ -637,7 +637,7 @@ pub enum MackValidationError {
 impl fmt::Display for MackValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MackValidationError::WrongMacseq => "incorrect MACSEQ field".fmt(f),
+            MackValidationError::MacseqError(err) => err.fmt(f),
             MackValidationError::WrongAdkd { tag_index, error } => {
                 write!(f, "incorrect ADKD field at tag {} ({})", tag_index, error)
             }
@@ -645,11 +645,17 @@ impl fmt::Display for MackValidationError {
     }
 }
 
+impl From<MacseqCheckError> for MackValidationError {
+    fn from(value: MacseqCheckError) -> MackValidationError {
+        MackValidationError::MacseqError(value)
+    }
+}
+
 #[cfg(feature = "std")]
 impl std::error::Error for MackValidationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            MackValidationError::WrongMacseq => None,
+            MackValidationError::MacseqError(err) => Some(err),
             MackValidationError::WrongAdkd { error, .. } => Some(error),
         }
     }
@@ -694,8 +700,10 @@ impl<'a, V: Clone> Mack<'a, V> {
     /// using the chain parameters held by the TESLA key.
     ///
     /// The parameter `prna` should be the SVN of the satellite that transmitted
-    /// this MACK message, and `gst_mack` corresponds to the GST at the
-    /// start of the subframe in which the MACK message was transmitted.
+    /// this MACK message, and `gst_mack` corresponds to the GST at the start of
+    /// the subframe in which the MACK message was transmitted. The `maclt`
+    /// parameter indicates the active MAC Look-up Table id. It is used to
+    /// determine which tags are flexible.
     ///
     /// If the validation is successful, this returns a copy of `self` with the
     /// validation type parameter `V` set to `Validated`. Otherwise, an error
@@ -706,9 +714,7 @@ impl<'a, V: Clone> Mack<'a, V> {
         prna: Svn,
         gst_mack: Gst,
     ) -> Result<Mack<'a, Validated>, MackValidationError> {
-        if !key.validate_macseq(self, prna, gst_mack) {
-            return Err(MackValidationError::WrongMacseq);
-        }
+        key.validate_macseq(self, prna, gst_mack)?;
 
         for j in 1..self.num_tags() {
             let tag = self.tag_and_info(j);
@@ -800,9 +806,16 @@ pub enum Adkd {
 }
 
 impl<'a, V> TagAndInfo<'a, V> {
-    /// Gives the tag field in the Tag-Info section.
+    /// Gives the tag field.
     pub fn tag(&self) -> &BitSlice {
         &self.data[..self.data.len() - 16]
+    }
+
+    /// Returns the tag-info section as a [`BitSlice`].
+    ///
+    /// The methods below return individual fields of the tag-info section.
+    pub fn tag_info(&self) -> &BitSlice {
+        &self.data[self.data.len() - 16..]
     }
 
     /// Gives the value of the PRND field in the Tag-Info section.

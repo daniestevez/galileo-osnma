@@ -6,7 +6,10 @@
 //! used to validate other keys transmitted at later GSTs, and to validate MACK
 //! messages and authenticate the navigation data using the tags in a MACK message.
 
-use crate::bitfields::{self, Adkd, DsmKroot, Mack, NmaHeader, NmaStatus, Prnd, TagAndInfo};
+use crate::bitfields::{self, DsmKroot, Mack, NmaHeader, NmaStatus, Prnd, TagAndInfo};
+use crate::maclt::{
+    get_flx_indices, get_maclt_entry, AuthObject, MacLTError, MacLTSlot, MAX_FLX_ENTRIES,
+};
 use crate::types::{BitSlice, NUM_SVNS};
 use crate::validation::{NotValidated, Validated};
 use crate::{Gst, Svn, Tow};
@@ -201,48 +204,29 @@ impl Chain {
         prna: Svn,
         gst_tag: Gst,
     ) -> Result<(), AdkdCheckError> {
-        assert!(num_tag >= 1);
         // Half of the GST minute
-        let column = (gst_tag.tow() / 30) % 2;
-        assert!((column == 0) || (column == 1));
-        let (adkd, object) = match (self.maclt, column, num_tag) {
-            (27, 0, 1 | 2 | 3 | 5) => (Adkd::InavCed, AuthObject::Other),
-            (27, _, 4) => (Adkd::SlowMac, AuthObject::SelfAuth),
-            (27, 1, 1 | 2 | 5) => (Adkd::InavCed, AuthObject::Other),
-            (27, 1, 3) => (Adkd::InavTiming, AuthObject::SelfAuth),
-            (28, 0, 1 | 2 | 3 | 5 | 6 | 8 | 9) => (Adkd::InavCed, AuthObject::Other),
-            (28, 0, 4) => (Adkd::InavCed, AuthObject::SelfAuth),
-            (28, _, 7) => (Adkd::SlowMac, AuthObject::SelfAuth),
-            (28, 1, 1 | 2 | 4 | 5 | 8 | 9) => (Adkd::InavCed, AuthObject::Other),
-            (28, 1, 3) => (Adkd::InavCed, AuthObject::SelfAuth),
-            (28, 1, 6) => (Adkd::InavTiming, AuthObject::SelfAuth),
-            (31, 0, 1 | 2 | 4) => (Adkd::InavCed, AuthObject::Other),
-            (31, _, 3) => (Adkd::SlowMac, AuthObject::SelfAuth),
-            (31, 1, 1 | 2) => (Adkd::InavCed, AuthObject::Other),
-            (31, 1, 4) => (Adkd::InavTiming, AuthObject::SelfAuth),
-            (33, 0, 1 | 3 | 5) => (Adkd::InavCed, AuthObject::Other),
-            (33, 0, 2) => (Adkd::InavTiming, AuthObject::SelfAuth),
-            (33, 0, 4) => (Adkd::SlowMac, AuthObject::SelfAuth),
-            (33, 1, 1 | 2 | 4) => (Adkd::InavCed, AuthObject::Other),
-            (33, 1, 3) => (Adkd::SlowMac, AuthObject::SelfAuth),
-            (33, 1, 5) => (Adkd::SlowMac, AuthObject::Other),
-            (27 | 28 | 31 | 33, _, _) => return Err(AdkdCheckError::InvalidTagNumber),
-            (_, _, _) => return Err(AdkdCheckError::InvalidMaclt),
-        };
-        assert!((adkd != Adkd::InavTiming) || (object == AuthObject::SelfAuth));
-        if tag.adkd() != adkd {
-            Err(AdkdCheckError::WrongAdkd)
-        } else if let Prnd::GalileoSvid(prnd) = tag.prnd() {
-            if object == AuthObject::SelfAuth && prnd != prna.try_into().unwrap() {
-                Err(AdkdCheckError::WrongPrnd)
-            } else if (1..=NUM_SVNS).contains(&prnd.into()) {
-                Ok(())
-            } else {
-                Err(AdkdCheckError::WrongPrnd)
+        let msg = usize::try_from((gst_tag.tow() / 30) % 2).unwrap();
+        match get_maclt_entry(self.maclt, msg, num_tag)? {
+            MacLTSlot::Fixed { adkd, object } => {
+                if tag.adkd() != adkd {
+                    Err(AdkdCheckError::WrongAdkd)
+                } else if let Prnd::GalileoSvid(prnd) = tag.prnd() {
+                    if object == AuthObject::SelfAuth && prnd != prna.into() {
+                        Err(AdkdCheckError::WrongPrnd)
+                    } else if (1..=NUM_SVNS).contains(&prnd.into()) {
+                        Ok(())
+                    } else {
+                        Err(AdkdCheckError::WrongPrnd)
+                    }
+                } else {
+                    // tag.prnd() is not a Galileo SVID
+                    Err(AdkdCheckError::WrongPrnd)
+                }
             }
-        } else {
-            // tag.prnd() is not a Galileo SVID
-            Err(AdkdCheckError::WrongPrnd)
+            MacLTSlot::Flex => {
+                // Any tag is valid for a flex slot
+                Ok(())
+            }
         }
     }
 }
@@ -278,10 +262,8 @@ impl std::error::Error for ChainError {}
 /// using [`Chain::validate_adkd`].
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum AdkdCheckError {
-    /// The tag number exceeds the number of tags in the MAC look-up table.
-    InvalidTagNumber,
-    /// The value of the MAC look-up table in the TESLA chain is invalid.
-    InvalidMaclt,
+    /// MAC Look-up Table error.
+    MacLTError(MacLTError),
     /// The ADKD does not match the value indicated in the corresponding MAC
     /// look-up table entry.
     WrongAdkd,
@@ -293,21 +275,27 @@ pub enum AdkdCheckError {
 impl fmt::Display for AdkdCheckError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AdkdCheckError::InvalidTagNumber => "invalid tag number".fmt(f),
-            AdkdCheckError::InvalidMaclt => "invalid MAC look-up table".fmt(f),
+            AdkdCheckError::MacLTError(err) => err.fmt(f),
             AdkdCheckError::WrongAdkd => "ADKD does not match MAC look-up table entry".fmt(f),
             AdkdCheckError::WrongPrnd => "PRND field does not match MAC look-up table entry".fmt(f),
         }
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for AdkdCheckError {}
+impl From<MacLTError> for AdkdCheckError {
+    fn from(value: MacLTError) -> AdkdCheckError {
+        AdkdCheckError::MacLTError(value)
+    }
+}
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-enum AuthObject {
-    SelfAuth,
-    Other,
+#[cfg(feature = "std")]
+impl std::error::Error for AdkdCheckError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            AdkdCheckError::MacLTError(err) => Some(err),
+            _ => None,
+        }
+    }
 }
 
 /// TESLA key.
@@ -737,22 +725,75 @@ impl Key<Validated> {
     /// Note that the key `self` must correspond to the next subframe of the
     /// MACK message.
     ///
-    /// This returns `true` if the validation was succesful. Otherwise, it
-    /// returns `false`.
-    pub fn validate_macseq<V>(&self, mack: &Mack<V>, prna: Svn, gst_mack: Gst) -> bool {
-        // No MACLTs with FLEX tags are defined currently, so FLEX
-        // tags are not taken into account. This will need to be
-        // updated when FLEX tags are added to the MACLTs.
-
-        // This is large enough if there are no FLEX tags
-        let mut buffer = [0u8; 5];
+    /// The function returns `Ok` if the validation was successful, and an error
+    /// otherwise.
+    pub fn validate_macseq<V: Clone>(
+        &self,
+        mack: &Mack<V>,
+        prna: Svn,
+        gst_mack: Gst,
+    ) -> Result<(), MacseqCheckError> {
+        const TAG_INFO_SIZE: usize = 2; // size of tag-info in bytes
+        const FIXED_SIZE: usize = 5; // size in bytes required for PRN_A and GST_SF
+        let mut buffer = [0u8; FIXED_SIZE + MAX_FLX_ENTRIES * TAG_INFO_SIZE];
+        // store fixed part in buffer
         buffer[0] = prna.into();
         Self::store_gst(&mut buffer[1..5], gst_mack);
-        let num_bytes = 5;
+        // store FLX tag-info's in buffer
+        let msg = usize::try_from((gst_mack.tow() / 30) % 2).unwrap(); // Half of the GST minute
+        let mut num_bytes = 5;
+        let maclt = self.chain().mac_lookup_table();
+        for idx in get_flx_indices(maclt, msg)? {
+            let tag_and_info = mack.tag_and_info(idx);
+            let dest = BitSlice::from_slice_mut(&mut buffer[num_bytes..num_bytes + 2]);
+            dest.copy_from_bitslice(tag_and_info.tag_info());
+            num_bytes += TAG_INFO_SIZE;
+        }
         let mut macseq_buffer = [0u8; 2];
         let macseq_bits = &mut BitSlice::from_slice_mut(&mut macseq_buffer)[..12];
         macseq_bits.store_be::<u16>(mack.macseq());
-        self.check_tag(&buffer[..num_bytes], macseq_bits)
+        if self.check_tag(&buffer[..num_bytes], macseq_bits) {
+            Ok(())
+        } else {
+            Err(MacseqCheckError::WrongMacseq)
+        }
+    }
+}
+
+/// Errors produced during the validation of a MACSEQ field.
+///
+/// This gives the errors that can happen during the validation of a MACSEQ field
+/// using [`Key::validate_macseq`].
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum MacseqCheckError {
+    /// MAC Look-up Table error.
+    MacLTError(MacLTError),
+    /// The calculated MACSEQ does not match the one in the MACK.
+    WrongMacseq,
+}
+
+impl fmt::Display for MacseqCheckError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MacseqCheckError::MacLTError(err) => err.fmt(f),
+            MacseqCheckError::WrongMacseq => "MACSEQ field is wrong".fmt(f),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for MacseqCheckError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            MacseqCheckError::MacLTError(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
+impl From<MacLTError> for MacseqCheckError {
+    fn from(value: MacLTError) -> MacseqCheckError {
+        MacseqCheckError::MacLTError(value)
     }
 }
 
@@ -762,6 +803,7 @@ mod test {
     use hex_literal::hex;
 
     fn test_chain() -> Chain {
+        // Active chain on 2022-03-07 ~09:00 UTC
         Chain {
             status: ChainStatus::Test,
             id: 1,
@@ -771,6 +813,20 @@ mod test {
             tag_size_bits: 40,
             maclt: 0x21,
             alpha: 0x25d3964da3a2,
+        }
+    }
+
+    fn test_chain_2023() -> Chain {
+        // Active chain on 2023-12-12 ~10:00 UTC
+        Chain {
+            status: ChainStatus::Test,
+            id: 0,
+            hash_function: HashFunction::Sha256,
+            mac_function: MacFunction::HmacSha256,
+            key_size_bytes: 16,
+            tag_size_bits: 40,
+            maclt: 34,
+            alpha: 0xe409305bb856,
         }
     }
 
@@ -851,6 +907,23 @@ mod test {
         )
     }
 
+    fn test_mack_2023() -> Mack<'static, NotValidated> {
+        // Data broadcast by E03 on 2023-12-12 ~10:00 UTC
+        let key_size = 128;
+        let tag_size = 40;
+        Mack::new(
+            &hex!(
+                "
+                88 36 af a3 5b eb b1 32 bf 2f 08 e9 24 0f 0a d4
+                c0 4f a2 08 0f 1d 02 fb 7f 53 03 c1 d4 a6 c5 3b
+                4a 05 0f 82 b1 53 4c fe 08 cf b3 2c df 02 5f 50
+                cf 39 04 d2 78 26 30 39 10 bf 00 00"
+            ),
+            key_size,
+            tag_size,
+        )
+    }
+
     fn test_key() -> Key<NotValidated> {
         Key::from_slice(
             &hex!("19 58 e7 76 6f b4 08 cb d6 a8 de fc e4 c7 d5 66"),
@@ -859,8 +932,17 @@ mod test {
         )
     }
 
+    fn test_key_2023() -> Key<NotValidated> {
+        Key::from_slice(
+            &hex!("33 4f d3 e5 68 c0 4e 2a 44 db a7 8a 03 01 c3 4a"),
+            Gst::new(1268, 208920),
+            &test_chain_2023(),
+        )
+    }
+
     #[test]
     fn adkd() {
+        // This does not include FLX entries
         let mack = test_mack();
         let prna = Svn::try_from(19).unwrap();
         for j in 1..mack.num_tags() {
@@ -871,10 +953,38 @@ mod test {
     }
 
     #[test]
+    fn adkd_2023() {
+        // This includes FLX entries
+        let mack = test_mack_2023();
+        let prna = Svn::try_from(3).unwrap();
+        for j in 1..mack.num_tags() {
+            assert!(test_chain()
+                .validate_adkd(j, mack.tag_and_info(j), prna, Gst::new(1268, 208890))
+                .is_ok());
+        }
+    }
+
+    #[test]
     fn macseq() {
+        // This does not include FLX entries
         let key = test_key().force_valid();
         let mack = test_mack();
         let prna = Svn::try_from(19).unwrap();
-        assert!(key.validate_macseq(&mack, prna, Gst::new(1176, 121050)));
+        assert_eq!(
+            key.validate_macseq(&mack, prna, Gst::new(1176, 121050)),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn macseq_2023() {
+        // This includes FLX entries
+        let key = test_key_2023().force_valid();
+        let mack = test_mack_2023();
+        let prna = Svn::try_from(3).unwrap();
+        assert_eq!(
+            key.validate_macseq(&mack, prna, Gst::new(1268, 208890)),
+            Ok(())
+        );
     }
 }
