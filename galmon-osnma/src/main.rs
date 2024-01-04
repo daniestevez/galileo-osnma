@@ -54,7 +54,7 @@ fn main() -> std::io::Result<()> {
             // mod 30 that we saw and fixing if needed.
             if tow % 30 == 15 && last_tow_mod_30 >= 19 {
                 log::debug!(
-                    "fixing wrong for SVN {}; tow = {}, last tow mod 30 = {}",
+                    "fixing wrong TOW for SVN {}; tow = {}, last tow mod 30 = {}",
                     inav.gnss_sv,
                     tow,
                     last_tow_mod_30
