@@ -78,6 +78,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let port = &args[1];
     let mut serial = Serial::new(port)?;
     let mut read_galmon = ReadTransport::new(std::io::stdin());
+    let mut current_subframe = None;
+    let mut last_tow_mod_30 = 0;
 
     loop {
         let packet = read_galmon.read_packet()?;
@@ -92,10 +94,29 @@ fn main() -> Result<(), Box<dyn Error>> {
         {
             // This is needed because sometimes we can see a TOW of 604801
             let secs_in_week = 604800;
-            let tow = inav.gnss_tow % secs_in_week;
+            let mut tow = inav.gnss_tow % secs_in_week;
             let wn = Wn::try_from(inav.gnss_wn).unwrap()
                 + Wn::try_from(inav.gnss_tow / secs_in_week).unwrap();
+
+            // Fix bug in Galmon data:
+            //
+            // Often, the E1B word 16 starting at TOW = 29 mod 30 will have the
+            // TOW of the previous word 16 in the subframe, which starts at TOW
+            // = 15 mod 30. We detect this condition by looking at the last tow
+            // mod 30 that we saw and fixing if needed.
+            if tow % 30 == 15 && last_tow_mod_30 >= 19 {
+                tow += 29 - 15; // wn rollover is not possible by this addition
+            }
+            last_tow_mod_30 = tow % 30;
+
             let gst = Gst::new(wn, tow);
+            if let Some(current) = current_subframe {
+                if current > gst.gst_subframe() {
+                    // Avoid processing INAV words that are in a previous subframe
+                    continue;
+                }
+            }
+            current_subframe = Some(gst.gst_subframe());
             let svn = usize::try_from(inav.gnss_sv).unwrap();
             let band = match sigid {
                 1 => InavBand::E1B,
