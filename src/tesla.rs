@@ -46,7 +46,7 @@ pub struct Chain {
 /// Chain status.
 ///
 /// This gives the chain status for a valid TESLA chain. This roughly
-/// corresponds to the NMA status [`NmaStatus`](crate::bitfields::NmaStatus),
+/// corresponds to the NMA status [`NmaStatus`],
 /// but "don't use" and "reserved" are not considered valid statuses for a TESLA
 /// chain.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -60,7 +60,7 @@ pub enum ChainStatus {
 /// Hash function.
 ///
 /// This gives the hash function used by the TESLA chain. Its values correspond
-/// to those of [`bitfields::HashFunction`](crate::bitfields::HashFunction),
+/// to those of [`bitfields::HashFunction`],
 /// minus the reserved value.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum HashFunction {
@@ -73,7 +73,7 @@ pub enum HashFunction {
 /// MAC function.
 ///
 /// This gives the MAC function used by the TESLA chain. Its values correspond
-/// to those of [`bitfields::MacFunction`](crate::bitfields::MacFunction),
+/// to those of [`bitfields::MacFunction`],
 /// minus the reserved value.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum MacFunction {
@@ -443,11 +443,11 @@ impl Key<Validated> {
     /// parameter.
     ///
     /// If validation using the public key `pubkey` and
-    /// [`DsmKroot::check_signature`] is correct, as well as the contents of the
-    /// DSM-KROOT padding, which are also checked using
-    /// [`DsmKroot::check_padding`], the TESLA root key is returned. Otherwise,
-    /// this returns an error that indicates what validation property was not
-    /// satisfied.
+    /// the corresponding check signature method of [`DsmKroot`]
+    /// is correct, as well as the contents of the DSM-KROOT padding, which are
+    /// also checked using [`DsmKroot::check_padding`], the TESLA root key is
+    /// returned. Otherwise, this returns an error that indicates what
+    /// validation property was not satisfied.
     pub fn from_dsm_kroot(
         nma_header: NmaHeader,
         dsm_kroot: DsmKroot,
