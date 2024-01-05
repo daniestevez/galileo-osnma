@@ -9,6 +9,29 @@ use crate::types::{DsmBlock, DSM_BLOCK_BYTES};
 const MAX_DSM_BLOCKS: usize = 16;
 const MAX_DSM_BYTES: usize = MAX_DSM_BLOCKS * DSM_BLOCK_BYTES;
 
+/// DSM message.
+///
+/// This struct represents a DSM message. It does not own the storage of the DSM
+/// data. It is borrowed from the internal storage of the [`CollectDsm`] that
+/// produced it.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct Dsm<'a> {
+    id: u8,
+    data: &'a [u8],
+}
+
+impl Dsm<'_> {
+    /// Gives the DSM ID of the DSM.
+    pub fn id(&self) -> u8 {
+        self.id
+    }
+
+    /// Returns a slice containing the data of the DSM.
+    pub fn data(&self) -> &[u8] {
+        self.data
+    }
+}
+
 /// DSM message collector.
 ///
 /// This struct collects DSM blocks and produces a complete DSM message when all
@@ -51,7 +74,7 @@ impl CollectDsm {
     ///
     /// If the block fed corresponds to a new DSM ID, the old data is discarded
     /// and the collection for the new DSM begins.
-    pub fn feed(&mut self, header: DsmHeader, block: &DsmBlock) -> Option<&[u8]> {
+    pub fn feed(&mut self, header: DsmHeader, block: &DsmBlock) -> Option<Dsm> {
         log::trace!("feeding header = {:?}, block = {:02x?}", header, block);
         if header.dsm_id() != self.dsm_id || self.dsm_type.is_none() {
             log::info!(
@@ -80,7 +103,10 @@ impl CollectDsm {
             let dsm = &self.dsm[..size];
             log::trace!("DSM contents {:02x?}", dsm);
             self.done = true;
-            Some(dsm)
+            Some(Dsm {
+                id: self.dsm_id,
+                data: dsm,
+            })
         } else {
             None
         }
@@ -206,19 +232,19 @@ mod test {
                 assert!(ret.is_none());
                 assert!(!collect.done);
             } else {
+                let dsm = ret.unwrap();
+                assert_eq!(dsm.id(), 2);
                 assert_eq!(
-                    ret,
-                    Some(
-                        &hex!(
-                            "22 50 49 21 04 98 21 25 d3 96 4d a3 a2 84 1e 1d
-                             e4 d4 58 c0 e9 84 24 76 e0 04 66 6c f3 79 58 de
-                             28 51 97 a2 63 53 f1 a4 c6 6d 7e 3d 29 18 53 ba
-                             5a 13 c9 c3 48 4a 26 77 70 11 2a 13 38 3e a5 2d
-                             3a 01 9d 5b 6e 1d d1 87 b9 45 3c df 06 ca 7f 34
-                             ea 14 97 52 5a af 18 f1 f9 f1 fc cb 12 29 89 77
-                             35 c0 21 b0 41 73 93 b5"
-                        )[..]
-                    )
+                    dsm.data(),
+                    &hex!(
+                        "22 50 49 21 04 98 21 25 d3 96 4d a3 a2 84 1e 1d
+                         e4 d4 58 c0 e9 84 24 76 e0 04 66 6c f3 79 58 de
+                         28 51 97 a2 63 53 f1 a4 c6 6d 7e 3d 29 18 53 ba
+                         5a 13 c9 c3 48 4a 26 77 70 11 2a 13 38 3e a5 2d
+                         3a 01 9d 5b 6e 1d d1 87 b9 45 3c df 06 ca 7f 34
+                         ea 14 97 52 5a af 18 f1 f9 f1 fc cb 12 29 89 77
+                         35 c0 21 b0 41 73 93 b5"
+                    )[..]
                 );
                 assert!(collect.done);
             }

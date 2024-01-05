@@ -1,5 +1,5 @@
 use crate::bitfields::{DsmHeader, DsmKroot, Mack, NmaHeader};
-use crate::dsm::CollectDsm;
+use crate::dsm::{CollectDsm, Dsm};
 use crate::mack::MackStorage;
 use crate::navmessage::{CollectNavMessage, NavMessageData};
 use crate::storage::StaticStorage;
@@ -187,9 +187,22 @@ impl<S: StaticStorage> OsnmaDsm<S> {
 }
 
 impl<S: StaticStorage> OsnmaData<S> {
-    fn process_dsm(&mut self, dsm: &[u8], nma_header: NmaHeader) {
-        // TODO: handle DSM-PKR
-        let dsm_kroot = DsmKroot(dsm);
+    fn process_dsm(&mut self, dsm: Dsm, nma_header: NmaHeader) {
+        // OSNMA ICD v1.1 Section 3.2.1.1:
+        //
+        // DSM IDs 0-11 are allocated to DSM-KROOT, and DSM IDs 12-15 are
+        // allocated to DSM-PKR.
+        match dsm.id() {
+            0..=11 => self.process_dsm_kroot(DsmKroot(dsm.data()), nma_header),
+            12..=15 => {
+                // TODO: handle DSM-PKR
+                log::error!("received DSM-PKR, but PKR is not implemented yet");
+            }
+            _ => unreachable!(), // the DSM ID only has 4 bits
+        }
+    }
+
+    fn process_dsm_kroot(&mut self, dsm_kroot: DsmKroot, nma_header: NmaHeader) {
         match Key::from_dsm_kroot(nma_header, dsm_kroot, &self.pubkey) {
             Ok(key) => {
                 log::info!("verified KROOT");
