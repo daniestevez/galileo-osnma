@@ -10,7 +10,7 @@ repository = "https://github.com/daniestevez/galileo-osnma/"
 keywords = ["galileo", "gnss", "osnma", "authentication", "cryptography"]
 categories = ["aerospace::space-protocols", "authentication", "embedded", "no-std"]
 exclude = ["/.github"]
-rust-version = "1.65.0"
+rust-version = "1.70.0"
 
 [package.metadata]
 
