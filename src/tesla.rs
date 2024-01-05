@@ -182,7 +182,7 @@ impl Chain {
     ///
     /// This checks the ADKD against the MAC look-up table as described in Annex
     /// C of the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     /// If the ADKD field is correct, this returns `Ok(())`. Otherwise, this
     /// returns an error indicating what property is not satisfied.
     ///
@@ -571,7 +571,7 @@ impl Key<Validated> {
     /// what validation property was not satisfied.
     ///
     /// This uses the algorithm described in Section 6.4 in the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     pub fn validate_key<V: Clone>(
         &self,
         other: &Key<V>,
@@ -606,7 +606,7 @@ impl Key<Validated> {
     /// Tries to validate a tag and its corresponding navigation data.
     ///
     /// The algorithm in Section 6.7 of the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     /// Is used to attempt to validate a tag and its corresponding navigation data.
     ///
     /// The `tag_gst` parameter should give the GST at the start of the subframe
@@ -647,7 +647,7 @@ impl Key<Validated> {
     /// Tries to validate a tag0 and its corresponding navigation data.
     ///
     /// The algorithm in Section 6.7 of the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     /// Is used to attempt to validate a tag and its corresponding navigation data.
     ///
     /// The `tag_gst` parameter should give the GST at the start of the subframe
@@ -714,7 +714,7 @@ impl Key<Validated> {
     /// Tries to validate the MACSEQ field in a MACK message.
     ///
     /// The algorithm in Section 6.6 of the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     /// Is used to attempt to validate the contents of the MACSEQ field in the MACK
     /// message.
     ///

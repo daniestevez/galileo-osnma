@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 ///
 /// The NMA header found in the first byte of an HKROOT message.
 /// See Figure 4 in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct NmaHeader<'a>(
     /// Reference to an array containing the 1-byte header data.
@@ -28,7 +28,7 @@ pub struct NmaHeader<'a>(
 ///
 /// This represents the values of the NMAS field of the [`NmaHeader`]
 /// as defined in Section 3.1.1 of the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum NmaStatus {
     /// Reserved value (NMAS = 0),
@@ -45,7 +45,7 @@ pub enum NmaStatus {
 ///
 /// This represents the valus of the CPKS field of the [`NmaHeader`]
 /// as defined in Section 3.1.3 of the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ChainAndPubkeyStatus {
     /// Reserved value (CPKS = 0).
@@ -117,7 +117,7 @@ impl fmt::Debug for NmaHeader<'_> {
 ///
 /// The DSM header found in the second byte of an HKROOT message.
 /// See Figure 5 in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct DsmHeader<'a>(
     /// Reference to an array containing the 1-byte header data.
@@ -127,7 +127,7 @@ pub struct DsmHeader<'a>(
 /// Type of the DSM message.
 ///
 /// This is derived from the DSM ID field according to Section 3.2.1.1 in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum DsmType {
     /// DSM-KROOT.
@@ -179,7 +179,7 @@ impl fmt::Debug for DsmHeader<'_> {
 /// DSM-KROOT message.
 ///
 /// The DSM-KROOT message, as defined in Figure 7 of the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct DsmKroot<'a>(
     /// Reference to a slice containing the DSM-KROOT message data.
@@ -195,7 +195,7 @@ pub struct DsmKroot<'a>(
 ///
 /// This represents the values of the Hash Function (HF) field of the DSM-KROOT
 /// message. See Table 8 in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum HashFunction {
     /// SHA-256 (HF = 0).
@@ -210,7 +210,7 @@ pub enum HashFunction {
 ///
 /// This represents the values of the MAC Function (MF) field of the DSM-KROOT
 /// message. See Table 9 in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum MacFunction {
     /// HMAC-SHA-256 (MF = 0).
@@ -225,7 +225,7 @@ pub enum MacFunction {
 ///
 /// This represents the key types available for ECDSA signatures. See Table 15
 /// in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum EcdsaFunction {
     /// ECDSA P-256/SHA-256.
@@ -243,7 +243,7 @@ impl<'a> DsmKroot<'a> {
     ///
     /// The number is computed according to the value of the NB_DK field and
     /// Table 7 in the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     ///
     /// If the NB_DK field contains a reserved value, `None` is returned.
     pub fn number_of_blocks(&self) -> Option<usize> {
@@ -292,7 +292,7 @@ impl<'a> DsmKroot<'a> {
     ///
     /// The size is computed according to the value of the KS field and
     /// Table 10 in the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     ///
     /// If the KS field contains a reserved value, `None` is returned.
     pub fn key_size(&self) -> Option<usize> {
@@ -319,7 +319,7 @@ impl<'a> DsmKroot<'a> {
     ///
     /// The size is computed according to the value of the TS field and
     /// Table 11 in the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     ///
     /// If the TS field contains a reserved value, `None` is returned.
     pub fn tag_size(&self) -> Option<usize> {
@@ -447,7 +447,7 @@ impl<'a> DsmKroot<'a> {
     /// Checks the contents of the padding field.
     ///
     /// The contents are checked according to Eq. 7 in the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     ///
     /// If the contents are correct, this returns `true`. Otherwise, this
     /// returns `false`.
@@ -474,7 +474,7 @@ impl<'a> DsmKroot<'a> {
     ///
     /// This verifies that the ECDSA signature of the DSM-KROOT message is
     /// correct. The algorithm in Section 6.3 of the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf)
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     /// is followed.
     ///
     /// Only P-256 signatures are supported.
@@ -516,7 +516,7 @@ impl fmt::Debug for DsmKroot<'_> {
 /// MACK message.
 ///
 /// The MACK message, as defined in Figure 8 of the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 ///
 /// This is one of the few structs in [bitfields](crate::bitfields) that is not
 /// a simple wrapper around a slice. The reason is that to interpret the MACK
@@ -571,7 +571,7 @@ impl<'a, V> Mack<'a, V> {
     /// Gives the tag0 field contained in the MACK header of the MACK message.
     ///
     /// See Figure 9 in the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     pub fn tag0(&self) -> &BitSlice {
         &self.data[..self.tag_size()]
     }
@@ -579,7 +579,7 @@ impl<'a, V> Mack<'a, V> {
     /// Gives the value of the MACSEQ field contained in the MACK header of the MACK message.
     ///
     /// See Figure 9 in the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     /// The MACSEQ is a 12-bit integer, which is returned as a `u16`.
     pub fn macseq(&self) -> u16 {
         let macseq_size = 12;
@@ -588,7 +588,8 @@ impl<'a, V> Mack<'a, V> {
 
     /// Gives the value of the COP field contained in the MACK header of the MACK message.
     ///
-    /// See Figure 9 in the [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.0.pdf).
+    /// See Figure 9 in the
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     /// The COP is a 4-bit integer, which is returned as a `u8`.
     pub fn cop(&self) -> u8 {
         let macseq_size = 12;
@@ -607,7 +608,7 @@ impl<'a, V> Mack<'a, V> {
     /// Gives the Key field of the MACK message.
     ///
     /// This fields contains a TESLA key. See Figure 8 in the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     pub fn key(&self) -> &BitSlice {
         let start = (self.tag_size() + 16) * self.num_tags();
         &self.data[start..start + self.key_size()]
@@ -623,7 +624,7 @@ pub enum MackValidationError {
     /// The MACSEQ field could not be verified.
     ///
     /// The MACSEQ field is checked using the algorithm in Section 6.6 of the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     MacseqError(MacseqCheckError),
     /// One of the ADKD fields is not correct.
     WrongAdkd {
@@ -664,8 +665,8 @@ impl std::error::Error for MackValidationError {
 impl<'a, V: Clone> Mack<'a, V> {
     /// Gives an object representing one of the Tag-Info sections in the MACK message.
     ///
-    /// The Tag-Info section is defined in Figure 11 of the [OSNMA
-    /// ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// The Tag-Info section is defined in Figure 11 of the
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     /// The parameter `n` corresponds to the index of the Tag-Info in the MACK
     /// message. The first Tag-Info has `n = 1`, since `n = 0` would correspond
     /// to the Tag0 field, which does not have an associated info field and is
@@ -695,7 +696,7 @@ impl<'a, V: Clone> Mack<'a, V> {
     /// attempt to validate the MACSEQ field and the ADKD fields of the MACK
     /// message. The MACSEQ field is checked using the algorithm in Section 6.6
     /// of the
-    /// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     /// The sequence of ADKD fields is checked against the MAC look-up table
     /// using the chain parameters held by the TESLA key.
     ///
@@ -751,7 +752,7 @@ impl<V: fmt::Debug + Clone> fmt::Debug for Mack<'_, V> {
 /// Tag-Info section.
 ///
 /// The Tag-Info section is defined in Figure 11 of the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 /// A Tag-Info field is obtained from a MACK message with [`Mack::tag_and_info`].
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct TagAndInfo<'a, V> {
@@ -763,7 +764,7 @@ pub struct TagAndInfo<'a, V> {
 ///
 /// This represents the values of the PRND field in a Tag-Info section, as
 /// described in Table 12 in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Prnd {
     /// Galileo SVID (PRND = 1 - 36).
@@ -792,7 +793,7 @@ impl TryFrom<Prnd> for u8 {
 ///
 /// Represents the values of the ADKD (Authentication Data and Key Delay) field,
 /// as defined in Table 14 in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Adkd {
     /// Galileo I/NAV ephemeris, clock and status (ADKD = 0).

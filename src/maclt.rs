@@ -1,7 +1,7 @@
 //! MAC Look-up Table
 //!
 //! This module contains the MAC Look-up Table defined in ANNEX C of the
-//! [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf),
+//! [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 //! and the supporting code required to use it.
 
 use crate::bitfields::Adkd;

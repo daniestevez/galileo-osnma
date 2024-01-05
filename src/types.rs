@@ -11,20 +11,20 @@ pub const MACK_SECTION_BYTES: usize = 4;
 ///
 /// The HKROOT section corresponds to the first 8 bits of the
 /// OSNMA data message. See Figure 2 in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 pub type HkrootSection = [u8; HKROOT_SECTION_BYTES];
 /// MACK section of an OSNMA message.
 ///
 /// The MACK section corresponds to the last 32 bits of the
 /// OSNMA data message. See Figure 2 in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 pub type MackSection = [u8; MACK_SECTION_BYTES];
 
 /// OSNMA data message.
 ///
 /// The OSNMA data message corresponds to 40 bits that are carrier in one of the
 /// reserved fields of the INAV pages. See Figure 1 in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 pub type OsnmaDataMessage = [u8; HKROOT_SECTION_BYTES + MACK_SECTION_BYTES];
 
 const WORDS_PER_SUBFRAME: usize = 15;
@@ -35,12 +35,12 @@ pub const MACK_MESSAGE_BYTES: usize = MACK_SECTION_BYTES * WORDS_PER_SUBFRAME;
 /// HKROOT message.
 ///
 /// The HKROOT message is composed by 15 HKROOT sections. See Figure 3 in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 pub type HkrootMessage = [u8; HKROOT_MESSAGE_BYTES];
 /// MACK message.
 ///
 /// The MACK message is composed by 15 MACK sections. See Figure 8 in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 pub type MackMessage = [u8; MACK_MESSAGE_BYTES];
 
 /// Size of a DSM block in bytes.
@@ -49,7 +49,7 @@ pub const DSM_BLOCK_BYTES: usize = 13;
 ///
 /// A DSM block corresponds to the HKROOT message minus the NMA header and the
 /// DSM header. See Figure 3 in the
-/// [OSNMA ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_User_ICD_for_Test_Phase_v1.0.pdf).
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 pub type DsmBlock = [u8; DSM_BLOCK_BYTES];
 
 /// A slice of bits.
@@ -69,7 +69,7 @@ pub const INAV_WORD_BYTES: usize = 16;
 ///
 /// An INAV word contains the 128 bits (16 bytes) as defined in
 /// Section 4.3.5 of the
-/// [Galileo OS SIS ICD](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OS_SIS_ICD_v2.0.pdf).
+/// [Galileo OS SIS ICD v2.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OS_SIS_ICD_v2.1.pdf).
 pub type InavWord = [u8; INAV_WORD_BYTES];
 
 /// The number of SVNs in the Galileo constellation.
