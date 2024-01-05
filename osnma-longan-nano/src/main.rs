@@ -77,7 +77,7 @@ struct OsnmaInterface {
 impl OsnmaInterface {
     fn new(board: Board) -> OsnmaInterface {
         let pubkey = VerifyingKey::from_sec1_bytes(&OSNMA_PUBKEY).unwrap();
-        let osnma = Osnma::<SmallStorage>::from_pubkey(pubkey, false);
+        let osnma = Osnma::<SmallStorage>::from_pubkey(pubkey.into(), false);
         OsnmaInterface { osnma, board }
     }
 

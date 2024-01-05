@@ -94,6 +94,12 @@ and some roadmap features that are not implemented yet. These are listed below.
 Supported features:
 
 * Verification of DSM-KROOT using ECDSA P-256.
+* Experimental support for verification of DSM-KROOT using ECDSA P-521.  This is
+  untested, because there are no test vectors or signal-in-space using ECDSA
+  P-521. Currently the `galmon-osnma` application assumes that the key that is
+  loaded is a P-256 key. The `p521` feature, which is enabled by default, is
+  used to active P-521 support. It is disabled in the `osnma-longan-nano` demo,
+  since otherwise the firmware size is too large.
 * Verification of TESLA keys using the TESLA root key or another previously
   authenticated key in the chain.
 * Verification of the MACSEQ and ADKD fields of the MACK message using the MAC
@@ -110,9 +116,6 @@ Supported features:
 
 Unsupported features:
 
-* Verification of DSM-KROOT using ECDSA P-521. A Rust implementation of this
-  elliptic curve is needed. This curve is currently not in use by the Galileo
-  OSNMA service phase.
 * Public key renewal. The parsing of DSM-PKR messages and the authentication
   using the Merkle tree is not implemented yet.
 * Change of TESLA chain scenarios. Currently it is assumed that there is only

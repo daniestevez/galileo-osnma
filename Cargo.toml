@@ -15,6 +15,7 @@ rust-version = "1.70.0"
 [package.metadata]
 
 [features]
+default = ["p521"]
 # Galmon protobuf transport format support
 galmon = ["bytes", "prost", "prost-build", "std"]
 std = []
@@ -29,12 +30,14 @@ ecdsa = "0.16"
 generic-array = "1.0"
 hmac = "0.12"
 log = "0.4"
-# This brings std with default-features
+# These two would bring std with default-features
 p256 = { version = "0.13", features = ["ecdsa"], default-features = false }
+p521 = { version = "0.13", features = ["ecdsa"], default-features = false, optional = true }
 prost = { version = "0.12", optional = true }
 # These two bring std with default-features
 sha2 = { version = "0.10", default-features = false }
 sha3 = { version = "0.10", default-features = false }
+signature = "2.2"
 typenum = "1.15"
 
 [build-dependencies]

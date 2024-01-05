@@ -14,7 +14,7 @@ publish = false
 
 [dependencies]
 hex = { version = "0.4", default-features = false }
-galileo-osnma = { path = ".." }
+galileo-osnma = { path = "..", default-features = false }
 longan-nano = "0.3"
 nb = "1.0"
 p256 = { version = "0.13", features = ["ecdsa"], default-features = false }

@@ -6,11 +6,13 @@
 //! used to validate other keys transmitted at later GSTs, and to validate MACK
 //! messages and authenticate the navigation data using the tags in a MACK message.
 
-use crate::bitfields::{self, DsmKroot, Mack, NmaHeader, NmaStatus, Prnd, TagAndInfo};
+use crate::bitfields::{
+    self, DsmKroot, EcdsaFunction, Mack, NmaHeader, NmaStatus, Prnd, TagAndInfo,
+};
 use crate::maclt::{
     get_flx_indices, get_maclt_entry, AuthObject, MacLTError, MacLTSlot, MAX_FLX_ENTRIES,
 };
-use crate::types::{BitSlice, NUM_SVNS};
+use crate::types::{BitSlice, VerifyingKey, NUM_SVNS};
 use crate::validation::{NotValidated, Validated};
 use crate::{Gst, Svn, Tow};
 use aes::Aes128;
@@ -19,7 +21,6 @@ use cmac::Cmac;
 use core::fmt;
 use crypto_common::KeyInit;
 use hmac::{Hmac, Mac};
-use p256::ecdsa::VerifyingKey;
 use sha2::{Digest, Sha256};
 use sha3::Sha3_256;
 
@@ -457,8 +458,19 @@ impl Key<Validated> {
         if !dsm_kroot.check_padding(nma_header) {
             return Err(KrootValidationError::WrongDsmKrootPadding);
         }
-        if !dsm_kroot.check_signature(nma_header, pubkey) {
-            return Err(KrootValidationError::WrongEcdsa);
+        match (pubkey, dsm_kroot.ecdsa_function()) {
+            (VerifyingKey::P256(pubkey), EcdsaFunction::P256Sha256) => {
+                if !dsm_kroot.check_signature_p256(nma_header, pubkey) {
+                    return Err(KrootValidationError::WrongEcdsa);
+                }
+            }
+            #[cfg(feature = "p521")]
+            (VerifyingKey::P521(pubkey), EcdsaFunction::P521Sha512) => {
+                if !dsm_kroot.check_signature_p521(nma_header, pubkey) {
+                    return Err(KrootValidationError::WrongEcdsa);
+                }
+            }
+            _ => return Err(KrootValidationError::WrongEcdsaKeyType),
         }
         let wn = dsm_kroot.kroot_wn();
         let tow = Tow::from(dsm_kroot.kroot_towh()) * 3600;
@@ -485,6 +497,9 @@ pub enum KrootValidationError {
     /// The check of the ECDSA signature of the DSM-KROOT message was not
     /// successful.
     WrongEcdsa,
+    /// The type of the ECDSA key does not match the ECDSA algorithm used in the
+    /// DSM-KROOT message.
+    WrongEcdsaKeyType,
 }
 
 impl fmt::Display for KrootValidationError {
@@ -495,6 +510,9 @@ impl fmt::Display for KrootValidationError {
             }
             KrootValidationError::WrongDsmKrootPadding => "incorrect padding in DSM-KROOT".fmt(f),
             KrootValidationError::WrongEcdsa => "invalid ECDSA signature in DSM-KROOT".fmt(f),
+            KrootValidationError::WrongEcdsaKeyType => {
+                "ECDSA key type does not match DSM-KROOT".fmt(f)
+            }
         }
     }
 }
@@ -504,7 +522,9 @@ impl std::error::Error for KrootValidationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             KrootValidationError::WrongDsmKrootChain(e) => Some(e),
-            KrootValidationError::WrongDsmKrootPadding | KrootValidationError::WrongEcdsa => None,
+            KrootValidationError::WrongDsmKrootPadding
+            | KrootValidationError::WrongEcdsa
+            | KrootValidationError::WrongEcdsaKeyType => None,
         }
     }
 }

@@ -269,10 +269,12 @@ dependencies = [
  "hmac",
  "log",
  "p256",
+ "p521",
  "prost",
  "prost-build",
  "sha2",
  "sha3",
+ "signature",
  "typenum",
 ]
 
@@ -481,6 +483,19 @@ version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c9863ad85fa8f4460f9c48cb909d38a0d689dba1f6f6988a5e3e0d31071bcd4b"
 dependencies = [
+ "ecdsa",
+ "elliptic-curve",
+ "primeorder",
+ "sha2",
+]
+
+[[package]]
+name = "p521"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fc9e2161f1f215afdfce23677034ae137bbd45016a880c2eb3ba8eb95f085b2"
+dependencies = [
+ "base16ct",
  "ecdsa",
  "elliptic-curve",
  "primeorder",

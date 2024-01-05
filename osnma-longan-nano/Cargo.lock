@@ -265,6 +265,7 @@ dependencies = [
  "p256",
  "sha2",
  "sha3",
+ "signature",
  "typenum",
 ]
 

@@ -5,12 +5,13 @@ use crate::navmessage::{CollectNavMessage, NavMessageData};
 use crate::storage::StaticStorage;
 use crate::subframe::CollectSubframe;
 use crate::tesla::Key;
-use crate::types::{HkrootMessage, InavBand, InavWord, MackMessage, OsnmaDataMessage};
+use crate::types::{
+    HkrootMessage, InavBand, InavWord, MackMessage, OsnmaDataMessage, VerifyingKey,
+};
 use crate::validation::{NotValidated, Validated};
 use crate::{Gst, Svn};
 
 use core::cmp::Ordering;
-use p256::ecdsa::VerifyingKey;
 
 /// OSNMA "black box" processing.
 ///
@@ -38,7 +39,7 @@ use p256::ecdsa::VerifyingKey;
 /// // Create OSNMA black box using full storage (36 satellites and
 /// // large enough history for Slow MAC)
 /// let only_slowmac = false; // process "fast" MAC as well as Slow MAC
-/// let mut osnma = Osnma::<FullStorage>::from_pubkey(pubkey, only_slowmac);
+/// let mut osnma = Osnma::<FullStorage>::from_pubkey(pubkey.into(), only_slowmac);
 ///
 /// // Feed some INAV and OSNMA data. Data full of zeros is used here.
 /// let svn = Svn::try_from(12).unwrap(); // E12
@@ -62,7 +63,7 @@ use p256::ecdsa::VerifyingKey;
 /// messages is defined by the [`StaticStorage`] type parameter `S`. See the
 /// [storage](crate::storage) module for a description of how the storage size
 /// is defined.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Osnma<S: StaticStorage> {
     subframe: CollectSubframe,
     data: OsnmaDsm<S>,
@@ -71,13 +72,13 @@ pub struct Osnma<S: StaticStorage> {
 // These structures exist only in order to avoid double mutable
 // borrows of Osnma because we take references from CollectSubframe
 // and CollectDsm
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 struct OsnmaDsm<S: StaticStorage> {
     dsm: CollectDsm,
     data: OsnmaData<S>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 struct OsnmaData<S: StaticStorage> {
     navmessage: CollectNavMessage<S>,
     mack: MackStorage<S>,

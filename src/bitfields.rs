@@ -10,8 +10,9 @@ use crate::validation::{NotValidated, Validated};
 use crate::{Gst, Svn, Wn};
 use bitvec::prelude::*;
 use core::fmt;
-use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
+use ecdsa::{PrimeCurve, Signature, SignatureSize};
 use sha2::{Digest, Sha256};
+use signature::Verifier;
 
 /// NMA header.
 ///
@@ -470,20 +471,66 @@ impl<'a> DsmKroot<'a> {
         truncated == padding
     }
 
-    /// Checks the ECDSA signature.
+    /// Checks the P256 ECDSA signature.
     ///
-    /// This verifies that the ECDSA signature of the DSM-KROOT message is
+    /// This verifies that the P256 ECDSA signature of the DSM-KROOT message is
     /// correct. The algorithm in Section 6.3 of the
     /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     /// is followed.
     ///
-    /// Only P-256 signatures are supported.
+    /// # Panics
+    ///
+    /// Panics if the DSM-KROOT message does not use a P256 ECDSA signature.
+    ///
+    pub fn check_signature_p256(
+        &self,
+        nma_header: NmaHeader,
+        pubkey: &p256::ecdsa::VerifyingKey,
+    ) -> bool {
+        assert_eq!(self.ecdsa_function(), EcdsaFunction::P256Sha256);
+        self.check_signature(nma_header, pubkey)
+    }
+
+    /// Checks the P512 ECDSA signature.
+    ///
+    /// This verifies that the P512 ECDSA signature of the DSM-KROOT message is
+    /// correct. The algorithm in Section 6.3 of the
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
+    /// is followed.
     ///
     /// # Panics
     ///
-    /// Panics if the ECDSA signature cannot be serialized.
+    /// Panics if the DSM-KROOT message does not use a P512 ECDSA signature.
     ///
-    pub fn check_signature(&self, nma_header: NmaHeader, pubkey: &VerifyingKey) -> bool {
+    #[cfg(feature = "p521")]
+    pub fn check_signature_p521(
+        &self,
+        nma_header: NmaHeader,
+        pubkey: &p521::ecdsa::VerifyingKey,
+    ) -> bool {
+        assert_eq!(self.ecdsa_function(), EcdsaFunction::P521Sha512);
+        self.check_signature(nma_header, pubkey)
+    }
+
+    // Generic function to check the ECDSA signature. This works for either:
+    //
+    // - VK = p256::ecdsa::VerifyingKey, C = p256::NistP256
+    // - VK = p512::ecdsa::VerifyingKey, C = p521::NistP521
+    //
+    // The function can also be called with other type parameters, but it doesn't
+    // make sense to do so.
+    //
+    // # Panics
+    //
+    // The function panics if the ECDSA signature cannot be serialized, which
+    // can happen if the chosen type parameters do not match the signature
+    // length in the DSM-KROOT message.
+    fn check_signature<VK, C>(&self, nma_header: NmaHeader, pubkey: &VK) -> bool
+    where
+        VK: Verifier<Signature<C>>,
+        C: PrimeCurve,
+        SignatureSize<C>: crypto_common::generic_array::ArrayLength<u8>,
+    {
         let (message, size) = self.signature_message(nma_header);
         let message = &message[..size];
         let signature = Signature::from_bytes(self.digital_signature().into())

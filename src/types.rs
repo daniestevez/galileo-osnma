@@ -91,3 +91,41 @@ pub enum InavBand {
     /// E5b band.
     E5B,
 }
+
+/// ECDSA verifying key.
+///
+/// This enum is either a P256 ECDSA key or a P521 ECDSA key.
+#[derive(Clone)]
+pub enum VerifyingKey {
+    /// P256 ECDSA key.
+    P256(p256::ecdsa::VerifyingKey),
+    /// P521 ECDSA key.
+    #[cfg(feature = "p521")]
+    P521(p521::ecdsa::VerifyingKey),
+}
+
+impl From<p256::ecdsa::VerifyingKey> for VerifyingKey {
+    fn from(value: p256::ecdsa::VerifyingKey) -> VerifyingKey {
+        VerifyingKey::P256(value)
+    }
+}
+
+#[cfg(feature = "p521")]
+impl From<p521::ecdsa::VerifyingKey> for VerifyingKey {
+    fn from(value: p521::ecdsa::VerifyingKey) -> VerifyingKey {
+        VerifyingKey::P521(value)
+    }
+}
+
+impl core::fmt::Debug for VerifyingKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            VerifyingKey::P256(key) => key.fmt(f),
+            #[cfg(feature = "p521")]
+            VerifyingKey::P521(_) => {
+                // Debug not implemented for P521 VerifyingKey
+                "<P521 key>".fmt(f)
+            }
+        }
+    }
+}

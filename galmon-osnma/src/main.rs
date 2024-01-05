@@ -23,7 +23,7 @@ fn main() -> std::io::Result<()> {
     let pubkey = load_pubkey(&args[1])?;
 
     let mut read = ReadTransport::new(std::io::stdin());
-    let mut osnma = Osnma::<FullStorage>::from_pubkey(pubkey, false);
+    let mut osnma = Osnma::<FullStorage>::from_pubkey(pubkey.into(), false);
     let mut timing_parameters: [Option<[u8; 18]>; NUM_SVNS] = [None; NUM_SVNS];
     let mut ced_and_status_data: [Option<[u8; 69]>; NUM_SVNS] = [None; NUM_SVNS];
     let mut current_subframe = None;
