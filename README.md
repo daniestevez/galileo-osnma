@@ -77,10 +77,10 @@ under [GSC Products > OSNMA_PUBLICKEY](https://www.gsc-europa.eu/gsc-products/OS
 It is necessary to register an account to obtain the key.
 
 The key is downloaded in an x509 certificate. The current certificate file is
-`OSNMA_PublicKey_20230803105952_newPKID_1.crt`. The key in PEM format, as
+`OSNMA_PublicKey_20231213105953_newPKID_2.crt`. The key in PEM format, as
 required by `galmon-osnma` can be extracted with
 ```
-openssl x509 -in OSNMA_PublicKey_20230803105952_newPKID_1.crt  -noout -pubkey > osnma-pubkey.pem
+openssl x509 -in OSNMA_PublicKey_20231213105953_newPKID_2.crt  -noout -pubkey > osnma-pubkey.pem
 ```
 
 ## Development status
