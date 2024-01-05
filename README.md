@@ -103,7 +103,7 @@ Supported features:
 * Verification of TESLA keys using the TESLA root key or another previously
   authenticated key in the chain.
 * Verification of the MACSEQ and ADKD fields of the MACK message using the MAC
-  look-up table.
+  look-up table. This includes checking the flexible ADKDs.
 * Verification of navigation data for ADKD=0, ADKD=4 and ADKD=12 using all the
   tags in the MACK messages.
 * Retrieval of DSM messages using OSNMA data.
@@ -120,10 +120,9 @@ Unsupported features:
   using the Merkle tree is not implemented yet.
 * Change of TESLA chain scenarios. Currently it is assumed that there is only
   one TESLA chain being used. The handling of the scenarios defined in Section
-  5.5 of the [Galileo OSNMA SIS ICD v1.0](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.0.pdf)
+  5.5 of the
+  [Galileo OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf)
   is not implemented.
-* Flexible ADKDs in the MAC look-up table. These are not currently defined for
-  in the [Galileo OSNMA SIS ICD v1.0](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.0.pdf).
 * Warm start, by loading a previously authenticated TESLA key.
 
 Roadmap features. These are not features of OSNMA itself, but will add to the
