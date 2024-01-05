@@ -10,7 +10,7 @@ jobs:
     name: Default features
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Install protoc
       run: |
         sudo apt-get update
@@ -30,7 +30,7 @@ jobs:
     name: Galmon features
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Install protoc
       run: |
         sudo apt-get update
@@ -50,7 +50,7 @@ jobs:
     name: MSRV
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Install protoc
       run: |
         sudo apt-get update
@@ -71,7 +71,7 @@ jobs:
       run:
         working-directory: galmon-osnma
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Install protoc
       run: |
         sudo apt-get update
@@ -92,7 +92,7 @@ jobs:
       run:
         working-directory: osnma-longan-nano
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Install riscv32imac Rust target
       run: rustup target add riscv32imac-unknown-none-elf
     - name: Format
@@ -109,7 +109,7 @@ jobs:
       run:
         working-directory: osnma-longan-nano-client
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Install libudev and protoc
       run: |
         sudo apt-get update
