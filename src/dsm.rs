@@ -17,6 +17,7 @@ const MAX_DSM_BYTES: usize = MAX_DSM_BLOCKS * DSM_BLOCK_BYTES;
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Dsm<'a> {
     id: u8,
+    dsm_type: DsmType,
     data: &'a [u8],
 }
 
@@ -24,6 +25,11 @@ impl Dsm<'_> {
     /// Gives the DSM ID of the DSM.
     pub fn id(&self) -> u8 {
         self.id
+    }
+
+    /// Gives the DSM type of the DSM.
+    pub fn dsm_type(&self) -> DsmType {
+        self.dsm_type
     }
 
     /// Returns a slice containing the data of the DSM.
@@ -105,6 +111,7 @@ impl CollectDsm {
             self.done = true;
             Some(Dsm {
                 id: self.dsm_id,
+                dsm_type,
                 data: dsm,
             })
         } else {
@@ -234,6 +241,7 @@ mod test {
             } else {
                 let dsm = ret.unwrap();
                 assert_eq!(dsm.id(), 2);
+                assert_eq!(dsm.dsm_type(), DsmType::Kroot);
                 assert_eq!(
                     dsm.data(),
                     &hex!(
