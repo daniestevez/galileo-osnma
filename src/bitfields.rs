@@ -5,7 +5,9 @@
 //! over a `&[u8]` or `&[u8; N]`.
 
 use crate::tesla::{AdkdCheckError, Key, MacseqCheckError};
-use crate::types::{BitSlice, MackMessage, Towh, MACK_MESSAGE_BYTES};
+use crate::types::{
+    BitSlice, MackMessage, MerkleTreeNode, Towh, MACK_MESSAGE_BYTES, MERKLE_TREE_NODE_BYTES,
+};
 use crate::validation::{NotValidated, Validated};
 use crate::{Gst, Svn, Wn};
 use bitvec::prelude::*;
@@ -177,6 +179,193 @@ impl fmt::Debug for DsmHeader<'_> {
     }
 }
 
+/// DSM-PKR message.
+///
+/// The DSM-PKR message, as defined in Figure 6 of the
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+pub struct DsmPkr<'a>(
+    /// Reference to a slice containing the DSM-PKR message data.
+    ///
+    /// # Panics
+    ///
+    /// This slice should be long enough to contain the full DSM-PKR
+    /// message. Otherwise the methods of `DsmPkr` may panic.
+    pub &'a [u8],
+);
+
+/// New Public Key Type (NPKT).
+///
+/// This represents the values of the New Public Key Type (NPKT) field in the
+/// DSM-PKR message. See Table 5 in the
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum NewPublicKeyType {
+    /// An ECDSA key, as defined by the enum [`EcdsaFunction`].
+    EcdsaKey(EcdsaFunction),
+    /// OSNMA Alert Message (OAM).
+    OsnmaAlertMessage,
+    /// Reserved value.
+    Reserved,
+}
+
+impl<'a> DsmPkr<'a> {
+    fn bits(&self) -> &BitSlice {
+        BitSlice::from_slice(self.0)
+    }
+
+    /// Gives the number of DSM-PKR blocks.
+    ///
+    /// The number is computed according to the value of the NB_DP field and
+    /// Table 3 in the
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
+    ///
+    /// If the NB_DP field contains a reserved value, `None` is returned.
+    pub fn number_of_blocks(&self) -> Option<usize> {
+        let v = self.bits()[..4].load_be::<u8>();
+        match v {
+            7..=10 => Some(usize::from(v) + 6),
+            _ => None, // reserved value
+        }
+    }
+
+    /// Gives the value of the Message ID (MID) field.
+    pub fn message_id(&self) -> u8 {
+        self.bits()[4..8].load_be::<u8>()
+    }
+
+    /// Gives the value of an interemediate tree node.
+    ///
+    /// The DSM-PKR contains 4 256-bit intermediate tree nodes. This returns the
+    /// 256-bit slice corresponding to the intermediate tree node in position
+    /// `node_number` (where `node_number` can be 0, 1, 2, or 3).
+    ///
+    /// # Panics
+    ///
+    /// This function panics if `node` number is not 0, 1, 2, or 3.
+    ///
+    pub fn intermediate_tree_node(&self, node_number: usize) -> &MerkleTreeNode {
+        assert!(node_number < 4);
+        (&self.0[1 + node_number * MERKLE_TREE_NODE_BYTES
+            ..1 + (node_number + 1) * MERKLE_TREE_NODE_BYTES])
+            .try_into()
+            .unwrap()
+    }
+
+    /// Gives the value of the New Public Key Type (NPKT) field.
+    pub fn new_public_key_type(&self) -> NewPublicKeyType {
+        match self.bits()[1032..1036].load_be::<u8>() {
+            1 => NewPublicKeyType::EcdsaKey(EcdsaFunction::P256Sha256),
+            3 => NewPublicKeyType::EcdsaKey(EcdsaFunction::P521Sha512),
+            4 => NewPublicKeyType::OsnmaAlertMessage,
+            _ => NewPublicKeyType::Reserved,
+        }
+    }
+
+    /// Gives the value of the New Public Key ID (NPKID) field.
+    pub fn new_public_key_id(&self) -> u8 {
+        self.bits()[1036..1040].load_be::<u8>()
+    }
+
+    /// Gives the size of the New Public Key field in bytes.
+    ///
+    /// The size is computed according to the value of the NPKT field and Table 6 in the
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
+    /// If the NPKT field contains a reserved value, `None` is returned.
+    pub fn key_size(&self) -> Option<usize> {
+        match self.new_public_key_type() {
+            NewPublicKeyType::EcdsaKey(EcdsaFunction::P256Sha256) => Some(264 / 8),
+            NewPublicKeyType::EcdsaKey(EcdsaFunction::P521Sha512) => Some(536 / 8),
+            NewPublicKeyType::OsnmaAlertMessage => {
+                self.number_of_blocks().map(|n| n * (104 / 8) - 1040 / 8)
+            }
+            NewPublicKeyType::Reserved => None,
+        }
+    }
+
+    /// Gives a slice containing the New Public Key field.
+    ///
+    /// If the size of the New Public Key field cannot be determined because
+    /// some other fields contain reserved values, `None` is returned.
+    pub fn new_public_key(&self) -> Option<&[u8]> {
+        self.key_size().map(|s| &self.0[1040 / 8..1040 / 8 + s])
+    }
+
+    /// Gives a slice containing the padding field.
+    ///
+    /// If the size of the New Public Key field cannot be determined because
+    /// some other fields contain reserved values, `None` is returned.
+    pub fn padding(&self) -> Option<&[u8]> {
+        if let (Some(ks), Some(nb)) = (self.key_size(), self.number_of_blocks()) {
+            Some(&self.0[1040 / 8 + ks..nb * 104 / 8])
+        } else {
+            None
+        }
+    }
+
+    /// Gives the Merkle tree leaf corresponding to this message.
+    ///
+    /// The tree leaf is defined in Section 6.2 of the
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
+    ///
+    /// If the size of the New Public Key field cannot be determined because
+    /// some other fields contain reserved values, `None` is returned.
+    pub fn merkle_tree_leaf(&self) -> Option<&[u8]> {
+        self.key_size().map(|s| &self.0[1032 / 8..1040 / 8 + s])
+    }
+
+    /// Checks the contents of the padding field.
+    /// The contents are checked according to Eq. 4 in the
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
+    ///
+    /// If the contents are correct, this returns `true`. Otherwise, this
+    /// returns `false`. If `self.padding()` returns `None`, then this function
+    /// returns `false`.
+    pub fn check_padding(&self, merkle_tree_root: &MerkleTreeNode) -> bool {
+        let Some(padding) = self.padding() else {
+            return false;
+        };
+        if padding.is_empty() {
+            // This happens for OSNMA Alert Messages: The padding is empty and
+            // does not need to be checked.
+            return true;
+        }
+        // This should not panic, because self.padding() is not None.
+        let key_size = self.key_size().unwrap();
+        /// The longest key is the ECDSA P-521, which needs 67 bytes
+        const LONGEST_KEY_SIZE: usize = 67;
+        const LONGEST_MERKLE_TREE_ROOT: usize = 1 + LONGEST_KEY_SIZE;
+        assert!(key_size <= LONGEST_KEY_SIZE);
+        let mut buff = [0; MERKLE_TREE_NODE_BYTES + LONGEST_MERKLE_TREE_ROOT];
+        buff[..MERKLE_TREE_NODE_BYTES].copy_from_slice(merkle_tree_root);
+        // This should not panic, because self.padding() is not None.
+        let m = self.merkle_tree_leaf().unwrap();
+        buff[MERKLE_TREE_NODE_BYTES..MERKLE_TREE_NODE_BYTES + m.len()].copy_from_slice(m);
+        let mut hash = Sha256::new();
+        hash.update(&buff[..MERKLE_TREE_NODE_BYTES + m.len()]);
+        let hash = hash.finalize();
+        let truncated = &hash[..padding.len()];
+        truncated == padding
+    }
+}
+
+impl fmt::Debug for DsmPkr<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DsmPkr")
+            .field("number_of_blocks", &self.number_of_blocks())
+            .field("message_id", &self.message_id())
+            .field("intermediate_tree_node_0", &self.intermediate_tree_node(0))
+            .field("intermediate_tree_node_1", &self.intermediate_tree_node(1))
+            .field("intermediate_tree_node_2", &self.intermediate_tree_node(2))
+            .field("intermediate_tree_node_3", &self.intermediate_tree_node(3))
+            .field("new_public_key_type", &self.new_public_key_type())
+            .field("new_public_key_id", &self.new_public_key_id())
+            .field("new_public_key", &self.new_public_key())
+            .field("padding", &self.padding())
+            .finish()
+    }
+}
+
 /// DSM-KROOT message.
 ///
 /// The DSM-KROOT message, as defined in Figure 7 of the
@@ -248,15 +437,9 @@ impl<'a> DsmKroot<'a> {
     ///
     /// If the NB_DK field contains a reserved value, `None` is returned.
     pub fn number_of_blocks(&self) -> Option<usize> {
-        match self.bits()[..4].load_be::<u8>() {
-            1 => Some(7),
-            2 => Some(8),
-            3 => Some(9),
-            4 => Some(10),
-            5 => Some(11),
-            6 => Some(12),
-            7 => Some(13),
-            8 => Some(14),
+        let v = self.bits()[..4].load_be::<u8>();
+        match v {
+            1..=8 => Some(usize::from(v) + 6),
             _ => None, // reserved value
         }
     }
@@ -931,6 +1114,114 @@ mod test {
         assert_eq!(dsm_header.dsm_id(), 1);
         assert_eq!(dsm_header.dsm_block_id(), 7);
         assert_eq!(dsm_header.dsm_type(), DsmType::Kroot);
+    }
+
+    #[test]
+    fn dsm_pkr() {
+        // DSM-PKR broadcast on 2023-12-12 12:00 UTC
+        let dsm = hex!(
+            "
+            70 01 63 1b dc ed 79 d4 31 7b c2 87 0e e3 89 5b
+            d5 9c f2 b6 ea 51 6f ab bf df 1d 73 96 26 14 6f
+            fe 31 6f a9 28 5f 5a 1e 44 04 24 13 bd af 18 aa
+            3c f6 84 72 33 97 d7 b8 32 5a ec a1 eb ca 9f 0f
+            64 99 05 42 4c be 48 2a 1a 32 b0 10 64 f8 5d 0c
+            36 df 03 8e 52 ce 12 8e 7e c5 f3 23 e1 65 b1 82
+            a7 15 37 bd b0 10 97 2e b4 a3 b9 0b aa cd 14 94
+            1e f4 0d a2 cb 2b 82 d3 78 b3 15 c0 08 de ce fd
+            8e 11 03 74 a9 25 cf a0 ff 18 05 e5 c5 a5 8f db
+            a3 1b f0 14 5d 5b 5b e2 f0 62 d3 f8 bb 2e e9 8f
+            0f 6d b0 e8 23 c5 e7 5e 78"
+        );
+        let dsm = DsmPkr(&dsm);
+        assert_eq!(dsm.number_of_blocks(), Some(13));
+        assert_eq!(dsm.message_id(), 0);
+        assert_eq!(
+            dsm.intermediate_tree_node(0),
+            &hex!(
+                "01 63 1b dc ed 79 d4 31 7b c2 87 0e e3 89 5b d5
+                 9c f2 b6 ea 51 6f ab bf df 1d 73 96 26 14 6f fe"
+            )
+        );
+        let itn1 = hex!(
+            "31 6f a9 28 5f 5a 1e 44 04 24 13 bd af 18 aa 3c
+             f6 84 72 33 97 d7 b8 32 5a ec a1 eb ca 9f 0f 64"
+        );
+        assert_eq!(dsm.intermediate_tree_node(1), &itn1);
+        let itn2 = hex!(
+            "99 05 42 4c be 48 2a 1a 32 b0 10 64 f8 5d 0c 36
+             df 03 8e 52 ce 12 8e 7e c5 f3 23 e1 65 b1 82 a7"
+        );
+        assert_eq!(dsm.intermediate_tree_node(2), &itn2);
+        let itn3 = hex!(
+            "15 37 bd b0 10 97 2e b4 a3 b9 0b aa cd 14 94 1e
+             f4 0d a2 cb 2b 82 d3 78 b3 15 c0 08 de ce fd 8e"
+        );
+        assert_eq!(dsm.intermediate_tree_node(3), &itn3);
+        assert_eq!(
+            dsm.new_public_key_type(),
+            NewPublicKeyType::EcdsaKey(EcdsaFunction::P256Sha256)
+        );
+        assert_eq!(dsm.new_public_key_id(), 1);
+        assert_eq!(
+            dsm.new_public_key(),
+            Some(
+                &hex!(
+                    "03 74 a9 25 cf a0 ff 18 05 e5 c5 a5 8f db a3 1b
+                     f0 14 5d 5b 5b e2 f0 62 d3 f8 bb 2e e9 8f 0f 6d b0"
+                )[..]
+            )
+        );
+        assert_eq!(dsm.padding(), Some(&hex!("e8 23 c5 e7 5e 78")[..]));
+        // Obtained from OSNMA_MerkleTree_20231213105954_PKID_1.xml
+        let merkle_tree_root =
+            hex!("0E63F552C8021709043C239032EFFE941BF22C8389032F5F2701E0FBC80148B8");
+        assert!(dsm.check_padding(&merkle_tree_root));
+
+        // DSM-PKR broadcast on 2023-12-15 00:00 UTC
+        let dsm = hex!(
+            "
+            71 e5 53 0a 33 d5 cb 60 c9 50 16 b8 ae c7 45 93
+            db cd f2 71 1d 39 9e a2 48 69 17 3c a2 29 37 9a
+            15 31 6f a9 28 5f 5a 1e 44 04 24 13 bd af 18 aa
+            3c f6 84 72 33 97 d7 b8 32 5a ec a1 eb ca 9f 0f
+            64 99 05 42 4c be 48 2a 1a 32 b0 10 64 f8 5d 0c
+            36 df 03 8e 52 ce 12 8e 7e c5 f3 23 e1 65 b1 82
+            a7 15 37 bd b0 10 97 2e b4 a3 b9 0b aa cd 14 94
+            1e f4 0d a2 cb 2b 82 d3 78 b3 15 c0 08 de ce fd
+            8e 12 03 35 78 e5 c7 11 a9 c3 bd dd 1c a4 ee 85
+            f7 c5 1b 36 78 97 cb 40 b8 85 68 a0 c8 97 da 30
+            ef b7 c3 24 e0 22 2c 90 80"
+        );
+        let dsm = DsmPkr(&dsm);
+        assert_eq!(dsm.number_of_blocks(), Some(13));
+        assert_eq!(dsm.message_id(), 1);
+        assert_eq!(
+            dsm.intermediate_tree_node(0),
+            &hex!(
+                "e5 53 0a 33 d5 cb 60 c9 50 16 b8 ae c7 45 93 db
+                 cd f2 71 1d 39 9e a2 48 69 17 3c a2 29 37 9a 15"
+            )
+        );
+        assert_eq!(dsm.intermediate_tree_node(1), &itn1);
+        assert_eq!(dsm.intermediate_tree_node(2), &itn2);
+        assert_eq!(dsm.intermediate_tree_node(3), &itn3);
+        assert_eq!(
+            dsm.new_public_key_type(),
+            NewPublicKeyType::EcdsaKey(EcdsaFunction::P256Sha256)
+        );
+        assert_eq!(dsm.new_public_key_id(), 2);
+        assert_eq!(
+            dsm.new_public_key(),
+            Some(
+                &hex!(
+                    "03 35 78 e5 c7 11 a9 c3 bd dd 1c a4 ee 85 f7 c5
+                     1b 36 78 97 cb 40 b8 85 68 a0 c8 97 da 30 ef b7 c3"
+                )[..]
+            )
+        );
+        assert_eq!(dsm.padding(), Some(&hex!("24 e0 22 2c 90 80")[..]));
+        assert!(dsm.check_padding(&merkle_tree_root));
     }
 
     #[test]

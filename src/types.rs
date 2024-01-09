@@ -52,6 +52,11 @@ pub const DSM_BLOCK_BYTES: usize = 13;
 /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 pub type DsmBlock = [u8; DSM_BLOCK_BYTES];
 
+/// Size of a Merkle tree node in bytes.
+pub const MERKLE_TREE_NODE_BYTES: usize = 32;
+/// Merkle tree node.
+pub type MerkleTreeNode = [u8; MERKLE_TREE_NODE_BYTES];
+
 /// A slice of bits.
 ///
 /// A [`BitSlice`](bitvec::slice::BitSlice) from the `bitvec` crate used to
