@@ -9,9 +9,7 @@
 use crate::bitfields::{
     self, DsmKroot, EcdsaFunction, Mack, NmaHeader, NmaStatus, Prnd, TagAndInfo,
 };
-use crate::maclt::{
-    get_flx_indices, get_maclt_entry, AuthObject, MacLTError, MacLTSlot, MAX_FLX_ENTRIES,
-};
+use crate::maclt::{get_flx_indices, get_maclt_entry, AuthObject, MacLTError, MacLTSlot};
 use crate::types::{BitSlice, VerifyingKey, NUM_SVNS};
 use crate::validation::{NotValidated, Validated};
 use crate::{Gst, Svn, Tow};
@@ -19,9 +17,12 @@ use aes::Aes128;
 use bitvec::prelude::*;
 use cmac::Cmac;
 use core::fmt;
-use crypto_common::KeyInit;
+use crypto_common::generic_array::GenericArray;
 use hmac::{Hmac, Mac};
-use sha2::{Digest, Sha256};
+use sha2::{
+    digest::{FixedOutput, Output, OutputSizeUser, Update},
+    Digest, Sha256,
+};
 use sha3::Sha3_256;
 
 const MAX_KEY_BYTES: usize = 32;
@@ -299,6 +300,87 @@ impl std::error::Error for AdkdCheckError {
     }
 }
 
+#[derive(Debug)]
+enum HashDigest {
+    Sha256(Sha256),
+    Sha3_256(Sha3_256),
+}
+
+impl HashDigest {
+    fn new(hash_function: HashFunction) -> HashDigest {
+        match hash_function {
+            HashFunction::Sha256 => HashDigest::Sha256(Sha256::new()),
+            HashFunction::Sha3_256 => HashDigest::Sha3_256(Sha3_256::new()),
+        }
+    }
+}
+
+impl Update for HashDigest {
+    fn update(&mut self, data: &[u8]) {
+        match self {
+            HashDigest::Sha256(d) => Update::update(d, data),
+            HashDigest::Sha3_256(d) => Update::update(d, data),
+        }
+    }
+}
+
+impl OutputSizeUser for HashDigest {
+    type OutputSize = <Sha256 as OutputSizeUser>::OutputSize;
+}
+
+impl FixedOutput for HashDigest {
+    fn finalize_into(self, out: &mut Output<Self>) {
+        match self {
+            HashDigest::Sha256(d) => FixedOutput::finalize_into(d, out),
+            HashDigest::Sha3_256(d) => FixedOutput::finalize_into(d, out),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum MacDigest {
+    HmacSha256(Hmac<Sha256>),
+    CmacAes(Cmac<Aes128>),
+}
+
+impl MacDigest {
+    fn new_from_slice(
+        mac_function: MacFunction,
+        key: &[u8],
+    ) -> Result<MacDigest, hmac::digest::InvalidLength> {
+        Ok(match mac_function {
+            MacFunction::HmacSha256 => MacDigest::HmacSha256(Mac::new_from_slice(key)?),
+            MacFunction::CmacAes => MacDigest::CmacAes(Mac::new_from_slice(key)?),
+        })
+    }
+}
+
+impl Update for MacDigest {
+    fn update(&mut self, data: &[u8]) {
+        match self {
+            MacDigest::HmacSha256(d) => Update::update(d, data),
+            MacDigest::CmacAes(d) => Update::update(d, data),
+        }
+    }
+}
+
+impl OutputSizeUser for MacDigest {
+    type OutputSize = <Hmac<Sha256> as OutputSizeUser>::OutputSize;
+}
+
+impl FixedOutput for MacDigest {
+    fn finalize_into(self, out: &mut Output<Self>) {
+        match self {
+            MacDigest::HmacSha256(d) => FixedOutput::finalize_into(d, out),
+            MacDigest::CmacAes(d) => {
+                // Out is a 256-bit GenericArray. CMAC AES-128 output is
+                // 128-bit. We write to the first 128 bits of the output GenericArray.
+                FixedOutput::finalize_into(d, GenericArray::from_mut_slice(&mut out[..16]));
+            }
+        }
+    }
+}
+
 /// TESLA key.
 ///
 /// This struct holds a TESLA key, its corresponding GST (the GST at the start
@@ -536,15 +618,18 @@ impl<V: Clone> Key<V> {
     /// chain. The validation status of the returned key is inherited from the
     /// validation status of `self`.
     pub fn one_way_function(&self) -> Key<V> {
-        // 10 bytes are needed for GST (32 bits) || alpha (48 bits)
-        let mut buffer = [0; MAX_KEY_BYTES + 10];
+        let mut hash = self.hash_digest();
         let size = self.chain.key_size_bytes;
-        buffer[..size].copy_from_slice(&self.data[..size]);
+        hash.update(&self.data[..size]);
+        let mut gst = [0; 4];
         let previous_subframe = self.gst_subframe.add_seconds(-30);
-        Self::store_gst(&mut buffer[size..size + 4], previous_subframe);
-        buffer[size + 4..size + 10].copy_from_slice(&self.chain.alpha.to_be_bytes()[2..]);
+        Self::store_gst(&mut gst, previous_subframe);
+        hash.update(&gst);
+        hash.update(&self.chain.alpha.to_be_bytes()[2..]);
+        let mut hash_out = GenericArray::default();
+        hash.finalize_into(&mut hash_out);
         let mut new_key = [0; MAX_KEY_BYTES];
-        self.hash_message(&buffer[..size + 10], &mut new_key[..size]);
+        new_key[..size].copy_from_slice(&hash_out[..size]);
         Key {
             data: new_key,
             chain: self.chain,
@@ -553,18 +638,8 @@ impl<V: Clone> Key<V> {
         }
     }
 
-    fn hash_message(&self, message: &[u8], hash_out: &mut [u8]) {
-        match self.chain.hash_function {
-            HashFunction::Sha256 => Self::hash_message_digest::<Sha256>(message, hash_out),
-            HashFunction::Sha3_256 => Self::hash_message_digest::<Sha3_256>(message, hash_out),
-        }
-    }
-
-    fn hash_message_digest<D: Digest>(message: &[u8], hash_out: &mut [u8]) {
-        let mut hash = D::new();
-        hash.update(message);
-        let hash = hash.finalize();
-        hash_out.copy_from_slice(&hash[..hash_out.len()]);
+    fn hash_digest(&self) -> HashDigest {
+        HashDigest::new(self.chain.hash_function)
     }
 
     /// Derives a TESLA key by applying the one-way function `num_derivations` times.
@@ -654,14 +729,10 @@ impl Key<Validated> {
         ctr: u8,
         navdata: &BitSlice,
     ) -> bool {
-        // The buffer needs to be 1 byte larger than for tag0,
-        // in order to fit PRN_D
-        const BUFF_SIZE: usize = 76;
-        let mut buffer = [0u8; BUFF_SIZE];
-        buffer[0] = prnd;
-        let num_bytes =
-            1 + self.fill_common_tag_message(&mut buffer[1..], tag_gst, prna, ctr, navdata);
-        self.check_tag(&buffer[..num_bytes], tag)
+        let mut mac = self.mac_digest();
+        mac.update(&[prnd]);
+        self.update_common_tag_message(&mut mac, tag_gst, prna, ctr, navdata);
+        self.check_common(mac, tag)
     }
 
     /// Tries to validate a tag0 and its corresponding navigation data.
@@ -687,47 +758,48 @@ impl Key<Validated> {
         prna: Svn,
         navdata: &BitSlice,
     ) -> bool {
-        // This is large enough to fit all the message for ADKD=0 and 12
-        // (which have the largest navdata)
-        const BUFF_SIZE: usize = 75;
-        let mut buffer = [0u8; BUFF_SIZE];
-        let num_bytes = self.fill_common_tag_message(&mut buffer, tag_gst, prna, 1, navdata);
-        self.check_tag(&buffer[..num_bytes], tag0)
+        let mut mac = self.mac_digest();
+        self.update_common_tag_message(&mut mac, tag_gst, prna, 1, navdata);
+        self.check_common(mac, tag0)
     }
 
-    fn fill_common_tag_message(
+    fn mac_digest(&self) -> MacDigest {
+        let key = &self.data[..self.chain.key_size_bytes];
+        MacDigest::new_from_slice(self.chain.mac_function, key).unwrap()
+    }
+
+    fn update_common_tag_message(
         &self,
-        buffer: &mut [u8],
+        mac: &mut MacDigest,
         gst: Gst,
         prna: Svn,
         ctr: u8,
         navdata: &BitSlice,
-    ) -> usize {
+    ) {
+        // This is large enough to fit all the message for ADKD=0 and 12
+        // (which have the largest navdata size, equal to 549 bits)
+        const MAX_NAVDATA_SIZE: usize = 69;
+        const FIXED_SIZE: usize = 6;
+        const BUFF_SIZE: usize = FIXED_SIZE + MAX_NAVDATA_SIZE;
+        let mut buffer = [0u8; BUFF_SIZE];
         buffer[0] = u8::from(prna);
         Self::store_gst(&mut buffer[1..5], gst);
         buffer[5] = ctr;
         let remaining_bits = BitSlice::from_slice_mut(&mut buffer[6..]);
-        remaining_bits[..2].store_be(match self.chain.status {
+        const STATUS_BITS: usize = 2;
+        remaining_bits[..STATUS_BITS].store_be(match self.chain.status {
             ChainStatus::Test => 1,
             ChainStatus::Operational => 2,
         });
-        remaining_bits[2..2 + navdata.len()].copy_from_bitslice(navdata);
-        6 + (2 + navdata.len() + 7) / 8 // number of bytes used by message
+        remaining_bits[STATUS_BITS..STATUS_BITS + navdata.len()].copy_from_bitslice(navdata);
+        let message_bytes = FIXED_SIZE + (STATUS_BITS + navdata.len() + 7) / 8;
+        mac.update(&buffer[..message_bytes]);
     }
 
-    fn check_tag(&self, message: &[u8], tag: &BitSlice) -> bool {
-        match self.chain.mac_function {
-            MacFunction::HmacSha256 => self.check_tag_mac::<Hmac<Sha256>>(message, tag),
-            MacFunction::CmacAes => self.check_tag_mac::<Cmac<Aes128>>(message, tag),
-        }
-    }
-
-    fn check_tag_mac<M: Mac + KeyInit>(&self, message: &[u8], tag: &BitSlice) -> bool {
-        let key = &self.data[..self.chain.key_size_bytes];
-        let mut mac = <M as Mac>::new_from_slice(key).unwrap();
-        mac.update(message);
-        let mac = mac.finalize().into_bytes();
-        let computed = &BitSlice::from_slice(&mac)[..tag.len()];
+    fn check_common(&self, mac: MacDigest, tag: &BitSlice) -> bool {
+        let mut mac_out = GenericArray::default();
+        mac.finalize_into(&mut mac_out);
+        let computed = &BitSlice::from_slice(&mac_out)[..tag.len()];
         computed == tag
     }
 
@@ -753,26 +825,31 @@ impl Key<Validated> {
         prna: Svn,
         gst_mack: Gst,
     ) -> Result<(), MacseqCheckError> {
+        let mut mac = self.mac_digest();
+        let mut buffer = [0u8; FIXED_SIZE];
         const TAG_INFO_SIZE: usize = 2; // size of tag-info in bytes
         const FIXED_SIZE: usize = 5; // size in bytes required for PRN_A and GST_SF
-        let mut buffer = [0u8; FIXED_SIZE + MAX_FLX_ENTRIES * TAG_INFO_SIZE];
-        // store fixed part in buffer
         buffer[0] = prna.into();
         Self::store_gst(&mut buffer[1..5], gst_mack);
-        // store FLX tag-info's in buffer
+        mac.update(&buffer);
+        // update MAC with FLX tag-info's
         let msg = usize::try_from((gst_mack.tow() / 30) % 2).unwrap(); // Half of the GST minute
-        let mut num_bytes = 5;
         let maclt = self.chain().mac_lookup_table();
         for idx in get_flx_indices(maclt, msg)? {
             let tag_and_info = mack.tag_and_info(idx);
-            let dest = BitSlice::from_slice_mut(&mut buffer[num_bytes..num_bytes + 2]);
+            let dest = BitSlice::from_slice_mut(&mut buffer[..TAG_INFO_SIZE]);
             dest.copy_from_bitslice(tag_and_info.tag_info());
-            num_bytes += TAG_INFO_SIZE;
+            mac.update(&buffer[..TAG_INFO_SIZE]);
         }
+        let mut mac_out = GenericArray::default();
+        mac.finalize_into(&mut mac_out);
+        const MACSEQ_BITS: usize = 12;
+        let computed = &BitSlice::from_slice(&mac_out)[..MACSEQ_BITS];
+
         let mut macseq_buffer = [0u8; 2];
-        let macseq_bits = &mut BitSlice::from_slice_mut(&mut macseq_buffer)[..12];
+        let macseq_bits = &mut BitSlice::from_slice_mut(&mut macseq_buffer)[..MACSEQ_BITS];
         macseq_bits.store_be::<u16>(mack.macseq());
-        if self.check_tag(&buffer[..num_bytes], macseq_bits) {
+        if computed == macseq_bits {
             Ok(())
         } else {
             Err(MacseqCheckError::WrongMacseq)

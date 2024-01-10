@@ -330,19 +330,10 @@ impl<'a> DsmPkr<'a> {
             // does not need to be checked.
             return true;
         }
-        // This should not panic, because self.padding() is not None.
-        let key_size = self.key_size().unwrap();
-        /// The longest key is the ECDSA P-521, which needs 67 bytes
-        const LONGEST_KEY_SIZE: usize = 67;
-        const LONGEST_MERKLE_TREE_ROOT: usize = 1 + LONGEST_KEY_SIZE;
-        assert!(key_size <= LONGEST_KEY_SIZE);
-        let mut buff = [0; MERKLE_TREE_NODE_BYTES + LONGEST_MERKLE_TREE_ROOT];
-        buff[..MERKLE_TREE_NODE_BYTES].copy_from_slice(merkle_tree_root);
-        // This should not panic, because self.padding() is not None.
-        let m = self.merkle_tree_leaf().unwrap();
-        buff[MERKLE_TREE_NODE_BYTES..MERKLE_TREE_NODE_BYTES + m.len()].copy_from_slice(m);
         let mut hash = Sha256::new();
-        hash.update(&buff[..MERKLE_TREE_NODE_BYTES + m.len()]);
+        hash.update(merkle_tree_root);
+        // merkle_tree_leaf should not panic, because self.padding() is not None
+        hash.update(self.merkle_tree_leaf().unwrap());
         let hash = hash.finalize();
         let truncated = &hash[..padding.len()];
         truncated == padding
@@ -636,18 +627,11 @@ impl<'a> DsmKroot<'a> {
     /// If the contents are correct, this returns `true`. Otherwise, this
     /// returns `false`.
     pub fn check_padding(&self, nma_header: NmaHeader) -> bool {
-        // maximum size is 209 bytes for the message and 132 bytes for
-        // the P521Sha512 signature
-        let mut buff = [0_u8; 209 + 132];
         let (message, size) = self.signature_message(nma_header);
         let message = &message[..size];
-        let a = message.len();
-        buff[..a].copy_from_slice(message);
-        let signature = self.digital_signature();
-        let b = a + signature.len();
-        buff[a..b].copy_from_slice(signature);
         let mut hash = Sha256::new();
-        hash.update(&buff[..b]);
+        hash.update(message);
+        hash.update(self.digital_signature());
         let hash = hash.finalize();
         let padding = self.padding();
         let truncated = &hash[..padding.len()];
