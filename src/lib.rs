@@ -59,6 +59,7 @@ mod gst;
 pub use gst::{Gst, Tow, Wn};
 pub mod mack;
 pub mod maclt;
+pub mod merkle_tree;
 pub mod navmessage;
 mod osnma;
 pub use osnma::Osnma;
