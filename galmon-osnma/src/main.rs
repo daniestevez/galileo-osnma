@@ -2,17 +2,18 @@ use galileo_osnma::{
     galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport},
     storage::FullStorage,
     types::{BitSlice, NUM_SVNS},
-    Gst, InavBand, Osnma, Svn, Wn,
+    Gst, InavBand, Osnma, PublicKey, Svn, Validated, Wn,
 };
 use p256::ecdsa::VerifyingKey;
 use spki::DecodePublicKey;
 use std::io::Read;
 
-fn load_pubkey(path: &str) -> std::io::Result<VerifyingKey> {
+fn load_pubkey(path: &str) -> std::io::Result<PublicKey<Validated>> {
     let mut file = std::fs::File::open(path)?;
     let mut pem = String::new();
     file.read_to_string(&mut pem)?;
-    Ok(VerifyingKey::from_public_key_pem(&pem).expect("invalid pubkey"))
+    let pubkey = VerifyingKey::from_public_key_pem(&pem).expect("invalid pubkey");
+    Ok(PublicKey::from_p256(pubkey).force_valid())
 }
 
 fn main() -> std::io::Result<()> {
@@ -23,7 +24,7 @@ fn main() -> std::io::Result<()> {
     let pubkey = load_pubkey(&args[1])?;
 
     let mut read = ReadTransport::new(std::io::stdin());
-    let mut osnma = Osnma::<FullStorage>::from_pubkey(pubkey.into(), false);
+    let mut osnma = Osnma::<FullStorage>::from_pubkey(pubkey, false);
     let mut timing_parameters: [Option<[u8; 18]>; NUM_SVNS] = [None; NUM_SVNS];
     let mut ced_and_status_data: [Option<[u8; 69]>; NUM_SVNS] = [None; NUM_SVNS];
     let mut current_subframe = None;

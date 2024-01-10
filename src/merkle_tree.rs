@@ -3,8 +3,9 @@
 //! This module contains code used to authenticate public keys against the OSNMA
 //! Merkle tree.
 
-use crate::bitfields::DsmPkr;
-use crate::types::MerkleTreeNode;
+use crate::bitfields::{DsmPkr, EcdsaFunction, NewPublicKeyType};
+use crate::types::{MerkleTreeNode, VerifyingKey};
+use crate::validation::{NotValidated, Validated};
 use core::fmt;
 use sha2::{Digest, Sha256};
 
@@ -33,9 +34,13 @@ impl MerkleTree {
     /// The validation algorithm is described in Section 6.2 of the
     /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
     ///
-    /// The function returns `Ok(())` if validation is successful. Otherwise, an
-    /// error is returned.
-    pub fn validate_pkr(&self, dsm_pkr: DsmPkr) -> Result<(), PkrError> {
+    /// If validation is successful, the function returns the public key
+    /// contained in the DSM-PRK, with its validation status set to
+    /// `Validated`. Otherwise, an error is returned.
+    pub fn validate_pkr(&self, dsm_pkr: DsmPkr) -> Result<PublicKey<Validated>, PkrError> {
+        if !matches!(dsm_pkr.new_public_key_type(), NewPublicKeyType::EcdsaKey(_)) {
+            return Err(PkrError::NoPublicKey);
+        }
         let Some(leaf) = dsm_pkr.merkle_tree_leaf() else {
             return Err(PkrError::ReservedField);
         };
@@ -53,7 +58,7 @@ impl MerkleTree {
             id >>= 1;
         }
         if node == self.root {
-            Ok(())
+            Self::pubkey_from_pkr(dsm_pkr)
         } else {
             Err(PkrError::Invalid)
         }
@@ -71,6 +76,33 @@ impl MerkleTree {
         hash.update(right);
         hash.finalize().into()
     }
+
+    fn pubkey_from_pkr(dsm_pkr: DsmPkr) -> Result<PublicKey<Validated>, PkrError> {
+        let key = dsm_pkr.new_public_key().unwrap();
+        let key = match dsm_pkr.new_public_key_type() {
+            NewPublicKeyType::EcdsaKey(EcdsaFunction::P256Sha256) => {
+                p256::ecdsa::VerifyingKey::from_sec1_bytes(key)
+                    .unwrap()
+                    .into()
+            }
+            #[cfg(feature = "p521")]
+            NewPublicKeyType::EcdsaKey(EcdsaFunction::P521Sha512) => {
+                p521::ecdsa::VerifyingKey::from_sec1_bytes(key)
+                    .unwrap()
+                    .into()
+            }
+            #[cfg(not(feature = "p521"))]
+            NewPublicKeyType::EcdsaKey(EcdsaFunction::P521Sha512) => {
+                return Err(PkrError::P521NotSupported)
+            }
+            // if this function has been called, the PKR contains a public key
+            _ => unreachable!(),
+        };
+        Ok(PublicKey {
+            key,
+            _validated: Validated {},
+        })
+    }
 }
 
 /// Errors produced during validation of the DSM-PKR using the Merkle tree.
@@ -82,6 +114,11 @@ pub enum PkrError {
     /// The computed Merkle tree root value does not match the pre-stored Merkle
     /// tree root.
     Invalid,
+    /// The DSM-PKR does not contain a public key.
+    NoPublicKey,
+    /// The DSM-PRK key is P521, but P521 support has not been enabled.
+    #[cfg(not(feature = "p521"))]
+    P521NotSupported,
 }
 
 impl fmt::Display for PkrError {
@@ -89,12 +126,72 @@ impl fmt::Display for PkrError {
         match self {
             PkrError::ReservedField => "reserved value present in some field".fmt(f),
             PkrError::Invalid => "wrong calculated Merkle tree root".fmt(f),
+            PkrError::NoPublicKey => "no public key in DSM-PKR".fmt(f),
+            #[cfg(not(feature = "p521"))]
+            PkrError::P521NotSupported => "P521 support disabled".fmt(f),
         }
     }
 }
 
 #[cfg(feature = "std")]
 impl std::error::Error for PkrError {}
+
+/// OSNMA public key.
+///
+/// This is an ECDSA verifying key used as public key for the verification of
+/// the TESLA KROOT. The key can be either a P256 ECDSA key or a P521 ECDSA key
+/// (if the feature `p521` is enabled).
+///
+/// The `V` type parameter is used to indicate the validation status of the
+/// key. By default, public keys are constructed as [`NotValidated`]. A
+/// [`Validated`] key can be obtained in two ways. Either by verification of a
+/// DSM-PKR against the Merkle tree, or by forcing the validation of a
+/// `NotValidated` key with [`PublicKey::force_valid`]. This function should
+/// only be called if the key is known to be valid, because it has been verified
+/// externally or loaded from a trustworthy source.
+#[derive(Debug, Clone)]
+pub struct PublicKey<V> {
+    key: VerifyingKey,
+    _validated: V,
+}
+
+impl PublicKey<NotValidated> {
+    /// Creates a new, not validated, key from a P256 ECDSA key.
+    pub fn from_p256(verifying_key: p256::ecdsa::VerifyingKey) -> PublicKey<NotValidated> {
+        PublicKey {
+            key: verifying_key.into(),
+            _validated: NotValidated {},
+        }
+    }
+
+    /// Creates a new, not validated, key from a P512 ECDSA key.
+    #[cfg(feature = "p521")]
+    pub fn from_p521(verifying_key: p521::ecdsa::VerifyingKey) -> PublicKey<NotValidated> {
+        PublicKey {
+            key: verifying_key.into(),
+            _validated: NotValidated {},
+        }
+    }
+
+    /// Forces the key validation state to [`Validated`].
+    ///
+    /// This function should only be called if the key is known to be valid,
+    /// because it has been verified externally or loaded from a trustworthy
+    /// source.
+    pub fn force_valid(self) -> PublicKey<Validated> {
+        PublicKey {
+            key: self.key,
+            _validated: Validated {},
+        }
+    }
+}
+
+impl PublicKey<Validated> {
+    /// Gives access to the public key.
+    pub fn verifying_key(&self) -> &VerifyingKey {
+        &self.key
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -126,12 +223,12 @@ mod test {
         );
         let dsm = DsmPkr(&dsm_buf);
         let mtree = merkle_tree();
-        assert_eq!(mtree.validate_pkr(dsm), Ok(()));
+        assert!(mtree.validate_pkr(dsm).is_ok());
         // inject error
         dsm_buf[40] ^= 1;
         let dsm = DsmPkr(&dsm_buf);
         let mtree = merkle_tree();
-        assert_eq!(mtree.validate_pkr(dsm), Err(PkrError::Invalid));
+        assert_eq!(mtree.validate_pkr(dsm).unwrap_err(), PkrError::Invalid);
     }
 
     #[test]
@@ -153,11 +250,11 @@ mod test {
         );
         let dsm = DsmPkr(&dsm_buf);
         let mtree = merkle_tree();
-        assert_eq!(mtree.validate_pkr(dsm), Ok(()));
+        assert!(mtree.validate_pkr(dsm).is_ok());
         // inject error
         dsm_buf[123] ^= 1;
         let dsm = DsmPkr(&dsm_buf);
         let mtree = merkle_tree();
-        assert_eq!(mtree.validate_pkr(dsm), Err(PkrError::Invalid));
+        assert_eq!(mtree.validate_pkr(dsm).unwrap_err(), PkrError::Invalid);
     }
 }

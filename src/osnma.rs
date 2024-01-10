@@ -5,11 +5,9 @@ use crate::navmessage::{CollectNavMessage, NavMessageData};
 use crate::storage::StaticStorage;
 use crate::subframe::CollectSubframe;
 use crate::tesla::Key;
-use crate::types::{
-    HkrootMessage, InavBand, InavWord, MackMessage, OsnmaDataMessage, VerifyingKey,
-};
+use crate::types::{HkrootMessage, InavBand, InavWord, MackMessage, OsnmaDataMessage};
 use crate::validation::{NotValidated, Validated};
-use crate::{Gst, Svn};
+use crate::{Gst, PublicKey, Svn};
 
 use core::cmp::Ordering;
 
@@ -24,7 +22,7 @@ use core::cmp::Ordering;
 /// # Examples
 ///
 /// ```
-/// use galileo_osnma::{Gst, InavBand, Osnma, Svn};
+/// use galileo_osnma::{Gst, InavBand, Osnma, PublicKey, Svn};
 /// use galileo_osnma::storage::FullStorage;
 /// use p256::ecdsa::VerifyingKey;
 ///
@@ -35,11 +33,15 @@ use core::cmp::Ordering;
 ///               117, 116, 91, 202, 57, 34, 72, 200, 202, 10, 169,
 ///               253, 225, 1, 233, 82, 99, 133, 255, 241, 114, 218];
 /// let pubkey = VerifyingKey::from_sec1_bytes(&pubkey).unwrap();
+/// let pubkey = PublicKey::from_p256(pubkey);
+/// // Force the public key to be valid. Only do this if the key
+/// // has been loaded from a trustworthy source.
+/// let pubkey = pubkey.force_valid();
 ///
 /// // Create OSNMA black box using full storage (36 satellites and
 /// // large enough history for Slow MAC)
 /// let only_slowmac = false; // process "fast" MAC as well as Slow MAC
-/// let mut osnma = Osnma::<FullStorage>::from_pubkey(pubkey.into(), only_slowmac);
+/// let mut osnma = Osnma::<FullStorage>::from_pubkey(pubkey, only_slowmac);
 ///
 /// // Feed some INAV and OSNMA data. Data full of zeros is used here.
 /// let svn = Svn::try_from(12).unwrap(); // E12
@@ -82,7 +84,7 @@ struct OsnmaDsm<S: StaticStorage> {
 struct OsnmaData<S: StaticStorage> {
     navmessage: CollectNavMessage<S>,
     mack: MackStorage<S>,
-    pubkey: VerifyingKey,
+    pubkey: PublicKey<Validated>,
     key: Option<Key<Validated>>,
     only_slowmac: bool,
 }
@@ -98,7 +100,7 @@ impl<S: StaticStorage> Osnma<S> {
     /// This should be used by receivers which have a larger time uncertainty.
     /// (See Annex 3 in the
     /// [OSNMA Receiver Guidelines](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_Receiver_Guidelines_for_Test_Phase_v1.0.pdf)).
-    pub fn from_pubkey(pubkey: VerifyingKey, only_slowmac: bool) -> Osnma<S> {
+    pub fn from_pubkey(pubkey: PublicKey<Validated>, only_slowmac: bool) -> Osnma<S> {
         Osnma {
             subframe: CollectSubframe::new(),
             data: OsnmaDsm {

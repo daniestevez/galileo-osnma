@@ -6,7 +6,7 @@ use core::fmt::Write;
 use galileo_osnma::{
     storage::SmallStorage,
     types::{HKROOT_SECTION_BYTES, INAV_WORD_BYTES, MACK_SECTION_BYTES},
-    Gst, InavBand, Osnma, Svn,
+    Gst, InavBand, Osnma, PublicKey, Svn,
 };
 use longan_nano::hal::{pac, prelude::*, serial};
 use nb::block;
@@ -77,7 +77,8 @@ struct OsnmaInterface {
 impl OsnmaInterface {
     fn new(board: Board) -> OsnmaInterface {
         let pubkey = VerifyingKey::from_sec1_bytes(&OSNMA_PUBKEY).unwrap();
-        let osnma = Osnma::<SmallStorage>::from_pubkey(pubkey.into(), false);
+        let pubkey = PublicKey::from_p256(pubkey).force_valid();
+        let osnma = Osnma::<SmallStorage>::from_pubkey(pubkey, false);
         OsnmaInterface { osnma, board }
     }
 

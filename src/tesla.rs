@@ -12,7 +12,7 @@ use crate::bitfields::{
 use crate::maclt::{get_flx_indices, get_maclt_entry, AuthObject, MacLTError, MacLTSlot};
 use crate::types::{BitSlice, VerifyingKey, NUM_SVNS};
 use crate::validation::{NotValidated, Validated};
-use crate::{Gst, Svn, Tow};
+use crate::{Gst, PublicKey, Svn, Tow};
 use aes::Aes128;
 use bitvec::prelude::*;
 use cmac::Cmac;
@@ -535,14 +535,14 @@ impl Key<Validated> {
     pub fn from_dsm_kroot(
         nma_header: NmaHeader,
         dsm_kroot: DsmKroot,
-        pubkey: &VerifyingKey,
+        pubkey: &PublicKey<Validated>,
     ) -> Result<Key<Validated>, KrootValidationError> {
         let chain = Chain::from_dsm_kroot(nma_header, dsm_kroot)
             .map_err(KrootValidationError::WrongDsmKrootChain)?;
         if !dsm_kroot.check_padding(nma_header) {
             return Err(KrootValidationError::WrongDsmKrootPadding);
         }
-        match (pubkey, dsm_kroot.ecdsa_function()) {
+        match (pubkey.verifying_key(), dsm_kroot.ecdsa_function()) {
             (VerifyingKey::P256(pubkey), EcdsaFunction::P256Sha256) => {
                 if !dsm_kroot.check_signature_p256(nma_header, pubkey) {
                     return Err(KrootValidationError::WrongEcdsa);
