@@ -1,13 +1,14 @@
-use crate::bitfields::{DsmHeader, DsmKroot, DsmType, Mack, NmaHeader};
+use crate::bitfields::{DsmHeader, DsmKroot, DsmPkr, DsmType, Mack, NmaHeader};
 use crate::dsm::{CollectDsm, Dsm};
 use crate::mack::MackStorage;
+use crate::merkle_tree::MerkleTree;
 use crate::navmessage::{CollectNavMessage, NavMessageData};
 use crate::storage::StaticStorage;
 use crate::subframe::CollectSubframe;
 use crate::tesla::Key;
 use crate::types::{HkrootMessage, InavBand, InavWord, MackMessage, OsnmaDataMessage};
 use crate::validation::{NotValidated, Validated};
-use crate::{Gst, PublicKey, Svn};
+use crate::{Gst, MerkleTreeNode, PublicKey, Svn};
 
 use core::cmp::Ordering;
 
@@ -84,13 +85,58 @@ struct OsnmaDsm<S: StaticStorage> {
 struct OsnmaData<S: StaticStorage> {
     navmessage: CollectNavMessage<S>,
     mack: MackStorage<S>,
-    pubkey: PublicKey<Validated>,
+    merkle_tree: Option<MerkleTree>,
+    pubkey: Option<PublicKey<Validated>>,
     key: Option<Key<Validated>>,
     only_slowmac: bool,
 }
 
 impl<S: StaticStorage> Osnma<S> {
-    /// Constructs a new OSNMA black box using an ECDSA P-256 public key.
+    fn new(
+        merkle_tree_root: Option<MerkleTreeNode>,
+        pubkey: Option<PublicKey<Validated>>,
+        only_slowmac: bool,
+    ) -> Osnma<S> {
+        Osnma {
+            subframe: CollectSubframe::new(),
+            data: OsnmaDsm {
+                dsm: CollectDsm::new(),
+                data: OsnmaData {
+                    navmessage: CollectNavMessage::new(),
+                    mack: MackStorage::new(),
+                    merkle_tree: merkle_tree_root.map(MerkleTree::new),
+                    pubkey,
+                    key: None,
+                    only_slowmac,
+                },
+            },
+        }
+    }
+
+    /// Constructs a new OSNMA black box using the Merkle tree root.
+    ///
+    /// An optional ECDSA public key can be passed in addition to the Merkle
+    /// tree root. If the ECDSA public key is not passed, the OSNMA black box
+    /// will need to obtain the public key from a DSM-PKR message. These
+    /// messages are broadcast only every 6 hours.
+    ///
+    /// If `only_slowmac` is `true`, only ADKD=12 (Slow MAC) will be processed.
+    /// This should be used by receivers which have a larger time uncertainty.
+    /// (See Annex 3 in the
+    /// [OSNMA Receiver Guidelines](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_Receiver_Guidelines_for_Test_Phase_v1.0.pdf)).
+    pub fn from_merkle_tree(
+        merkle_tree_root: MerkleTreeNode,
+        pubkey: Option<PublicKey<Validated>>,
+        only_slowmac: bool,
+    ) -> Osnma<S> {
+        Osnma::new(Some(merkle_tree_root), pubkey, only_slowmac)
+    }
+
+    /// Constructs a new OSNMA black box using only an ECDSA public key.
+    ///
+    /// This function is similar to [`Osnma::from_merkle_tree`], but the Merkle
+    /// tree root is not loaded. Therefore, DSM-PKR verification will not be
+    /// done, and only the provided ECDSA public key will be used.
     ///
     /// The OSNMA black box will hold the public key `pubkey` and use it to
     /// try to authenticate the TESLA root key. The public key cannot be changed
@@ -101,19 +147,7 @@ impl<S: StaticStorage> Osnma<S> {
     /// (See Annex 3 in the
     /// [OSNMA Receiver Guidelines](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_Receiver_Guidelines_for_Test_Phase_v1.0.pdf)).
     pub fn from_pubkey(pubkey: PublicKey<Validated>, only_slowmac: bool) -> Osnma<S> {
-        Osnma {
-            subframe: CollectSubframe::new(),
-            data: OsnmaDsm {
-                dsm: CollectDsm::new(),
-                data: OsnmaData {
-                    navmessage: CollectNavMessage::new(),
-                    mack: MackStorage::new(),
-                    pubkey,
-                    key: None,
-                    only_slowmac,
-                },
-            },
-        }
+        Osnma::new(None, Some(pubkey), only_slowmac)
     }
 
     /// Feed an INAV word into the OSNMA black box.
@@ -193,15 +227,16 @@ impl<S: StaticStorage> OsnmaData<S> {
     fn process_dsm(&mut self, dsm: Dsm, nma_header: NmaHeader) {
         match dsm.dsm_type() {
             DsmType::Kroot => self.process_dsm_kroot(DsmKroot(dsm.data()), nma_header),
-            DsmType::Pkr => {
-                // TODO: handle DSM-PKR
-                log::error!("received DSM-PKR, but PKR is not implemented yet");
-            }
+            DsmType::Pkr => self.process_dsm_pkr(DsmPkr(dsm.data())),
         }
     }
 
     fn process_dsm_kroot(&mut self, dsm_kroot: DsmKroot, nma_header: NmaHeader) {
-        match Key::from_dsm_kroot(nma_header, dsm_kroot, &self.pubkey) {
+        let Some(pubkey) = &self.pubkey else {
+            log::error!("could not verify KROOT because no public key is available");
+            return;
+        };
+        match Key::from_dsm_kroot(nma_header, dsm_kroot, pubkey) {
             Ok(key) => {
                 log::info!("verified KROOT");
                 if self.key.is_none() {
@@ -210,6 +245,20 @@ impl<S: StaticStorage> OsnmaData<S> {
                 }
             }
             Err(e) => log::error!("could not verify KROOT: {:?}", e),
+        }
+    }
+
+    fn process_dsm_pkr(&mut self, dsm_pkr: DsmPkr) {
+        let Some(merkle_tree) = &self.merkle_tree else {
+            log::error!("could not verify public key because Merkle tree is not loaded");
+            return;
+        };
+        match merkle_tree.validate_pkr(dsm_pkr) {
+            Ok(_) => {
+                log::info!("verified public key in DSM-PKR: {dsm_pkr:?}");
+                // TODO: implement key update
+            }
+            Err(e) => log::error!("could not verify public key: {e:?}"),
         }
     }
 

@@ -70,6 +70,6 @@ mod svn;
 pub use svn::{Svn, SvnError};
 pub mod tesla;
 pub mod types;
-pub use types::InavBand;
+pub use types::{InavBand, MerkleTreeNode};
 pub mod validation;
 pub use validation::Validated;
