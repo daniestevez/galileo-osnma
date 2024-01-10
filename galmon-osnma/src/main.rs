@@ -1,3 +1,4 @@
+use clap::Parser;
 use galileo_osnma::{
     galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport},
     storage::FullStorage,
@@ -7,6 +8,21 @@ use galileo_osnma::{
 use p256::ecdsa::VerifyingKey;
 use spki::DecodePublicKey;
 use std::io::Read;
+
+/// Process OSNMA data reading Galmon protobuf from stdin
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Merkle tree root in hex.
+    #[arg(long)]
+    merkle_root: Option<String>,
+    /// Path to the public key in PEM format.
+    #[arg(long)]
+    pubkey: Option<String>,
+    /// Only process slow MAC data.
+    #[arg(long)]
+    slow_mac_only: bool,
+}
 
 fn load_pubkey(path: &str) -> std::io::Result<PublicKey<Validated>> {
     let mut file = std::fs::File::open(path)?;
@@ -18,13 +34,33 @@ fn load_pubkey(path: &str) -> std::io::Result<PublicKey<Validated>> {
 
 fn main() -> std::io::Result<()> {
     env_logger::init();
+    let args = Args::parse();
 
-    let args: Vec<_> = std::env::args().collect();
+    if args.merkle_root.is_none() && args.pubkey.is_none() {
+        log::error!("at least either the Merkle tree root or the public key must be specified");
+        // TODO: return an error exit code
+        return Ok(());
+    }
 
-    let pubkey = load_pubkey(&args[1])?;
+    let pubkey = if let Some(pubkey_path) = &args.pubkey {
+        Some(load_pubkey(pubkey_path)?)
+    } else {
+        None
+    };
+
+    let mut osnma: Osnma<FullStorage> = if let Some(merkle) = &args.merkle_root {
+        let merkle = hex::decode(merkle)
+            .expect("invalid Merkle tree hex data")
+            .try_into()
+            .expect("wrong length of Merkle tree hex data");
+        Osnma::from_merkle_tree(merkle, pubkey, args.slow_mac_only)
+    } else {
+        // Here pubkey shouldn't be None, because Merkle tree is None and we
+        // have checked that at least one of both is not None.
+        Osnma::from_pubkey(pubkey.unwrap(), args.slow_mac_only)
+    };
 
     let mut read = ReadTransport::new(std::io::stdin());
-    let mut osnma = Osnma::<FullStorage>::from_pubkey(pubkey, false);
     let mut timing_parameters: [Option<[u8; 18]>; NUM_SVNS] = [None; NUM_SVNS];
     let mut ced_and_status_data: [Option<[u8; 69]>; NUM_SVNS] = [None; NUM_SVNS];
     let mut current_subframe = None;
