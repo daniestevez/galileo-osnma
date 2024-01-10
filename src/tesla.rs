@@ -301,6 +301,7 @@ impl std::error::Error for AdkdCheckError {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum HashDigest {
     Sha256(Sha256),
     Sha3_256(Sha3_256),
@@ -338,6 +339,7 @@ impl FixedOutput for HashDigest {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum MacDigest {
     HmacSha256(Hmac<Sha256>),
     CmacAes(Cmac<Aes128>),
