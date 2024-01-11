@@ -3,21 +3,24 @@ use spki::DecodePublicKey;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
-fn read_pubkey(path: &str) -> std::io::Result<Vec<u8>> {
+fn read_pubkey(path: &str, path_id: &str) -> std::io::Result<(Vec<u8>, u8)> {
     let pem = fs::read_to_string(path)?;
     let key = VerifyingKey::from_public_key_pem(&pem).expect("invalid pubkey");
     let key_point = key.to_encoded_point(true);
     let key_bytes = key_point.as_bytes();
-    Ok(Vec::from(key_bytes))
+    let id = fs::read_to_string(path_id)?;
+    let id: u8 = id.trim().parse().expect("wrong pubkey id format");
+    Ok((Vec::from(key_bytes), id))
 }
 
-fn pubkey_to_rust(pubkey: &[u8], path: &Path) -> std::io::Result<()> {
+fn pubkey_to_rust(pubkey: &[u8], pubkey_id: u8, path: &Path) -> std::io::Result<()> {
     fs::write(
         path,
         format!(
-            "const OSNMA_PUBKEY: [u8; {}] = {:?};\n",
+            "const OSNMA_PUBKEY: [u8; {}] = {:?};\nconst OSNMA_PUBKEY_ID: u8 = {};\n",
             pubkey.len(),
-            pubkey
+            pubkey,
+            pubkey_id,
         ),
     )
 }
@@ -29,8 +32,9 @@ fn main() {
     fs::copy("memory-cb.x", out_dir.join("memory-cb.x")).unwrap();
     println!("cargo:rerun-if-changed=memory-cb.x");
 
-    let pubkey = read_pubkey("pubkey.pem").unwrap();
-    pubkey_to_rust(&pubkey, &out_dir.join("osnma_pubkey.rs")).unwrap();
+    let (pubkey, pubkey_id) = read_pubkey("pubkey.pem", "pubkey_id.txt").unwrap();
+    pubkey_to_rust(&pubkey, pubkey_id, &out_dir.join("osnma_pubkey.rs")).unwrap();
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=pubkey.pem");
+    println!("cargo:rerun-if-changed=pubkey_id.txt");
 }
