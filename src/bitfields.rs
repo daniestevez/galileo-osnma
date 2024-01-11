@@ -4,6 +4,7 @@
 //! the messages used by OSNMA. As a general rule, the structures are a wrapper
 //! over a `&[u8]` or `&[u8; N]`.
 
+pub use crate::tesla::NmaHeader;
 use crate::tesla::{AdkdCheckError, Key, MacseqCheckError};
 use crate::types::{
     BitSlice, MackMessage, MerkleTreeNode, Towh, MACK_MESSAGE_BYTES, MERKLE_TREE_NODE_BYTES,
@@ -15,17 +16,6 @@ use core::fmt;
 use ecdsa::{PrimeCurve, Signature, SignatureSize};
 use sha2::{Digest, Sha256};
 use signature::Verifier;
-
-/// NMA header.
-///
-/// The NMA header found in the first byte of an HKROOT message.
-/// See Figure 4 in the
-/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct NmaHeader<'a>(
-    /// Reference to an array containing the 1-byte header data.
-    pub &'a [u8; 1],
-);
 
 /// Status of the NMA chain.
 ///
@@ -67,53 +57,6 @@ pub enum ChainAndPubkeyStatus {
     NewMerkleTree,
     /// Alert Message (AM) (CPKS = 7)
     AlertMessage,
-}
-
-impl<'a> NmaHeader<'a> {
-    fn bits(&self) -> &BitSlice {
-        BitSlice::from_slice(self.0)
-    }
-
-    /// Gives the value of the NMAS (NMA status) field.
-    pub fn nma_status(&self) -> NmaStatus {
-        match self.bits()[..2].load_be::<u8>() {
-            0 => NmaStatus::Reserved,
-            1 => NmaStatus::Test,
-            2 => NmaStatus::Operational,
-            3 => NmaStatus::DontUse,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Gives the value of the CID (chain ID) field.
-    pub fn chain_id(&self) -> u8 {
-        self.bits()[2..4].load_be::<u8>()
-    }
-
-    /// Gives the value of the CPKS (chain and public key status) field.
-    pub fn chain_and_pubkey_status(&self) -> ChainAndPubkeyStatus {
-        match self.bits()[4..7].load_be::<u8>() {
-            0 => ChainAndPubkeyStatus::Reserved,
-            1 => ChainAndPubkeyStatus::Nominal,
-            2 => ChainAndPubkeyStatus::EndOfChain,
-            3 => ChainAndPubkeyStatus::ChainRevoked,
-            4 => ChainAndPubkeyStatus::NewPublicKey,
-            5 => ChainAndPubkeyStatus::PublicKeyRevoked,
-            6 => ChainAndPubkeyStatus::NewMerkleTree,
-            7 => ChainAndPubkeyStatus::AlertMessage,
-            8.. => unreachable!(), // we are only reading 3 bits
-        }
-    }
-}
-
-impl fmt::Debug for NmaHeader<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("NmaHeader")
-            .field("nma_status", &self.nma_status())
-            .field("chain_id", &self.chain_id())
-            .field("chain_and_pubkey_status", &self.chain_and_pubkey_status())
-            .finish()
-    }
 }
 
 /// DSM header.
@@ -610,9 +553,9 @@ impl<'a> DsmKroot<'a> {
     }
 
     // message for digital signature verification
-    fn signature_message(&self, nma_header: NmaHeader) -> ([u8; 209], usize) {
+    fn signature_message(&self, nma_header: NmaHeader<NotValidated>) -> ([u8; 209], usize) {
         let mut m = [0; 209];
-        m[0] = nma_header.0[0];
+        m[0] = nma_header.data();
         let end = 13 + self.kroot().len();
         // we skip the NB_DK and PKID fields in self.0
         m[1..end].copy_from_slice(&self.0[1..end]);
@@ -626,7 +569,7 @@ impl<'a> DsmKroot<'a> {
     ///
     /// If the contents are correct, this returns `true`. Otherwise, this
     /// returns `false`.
-    pub fn check_padding(&self, nma_header: NmaHeader) -> bool {
+    pub fn check_padding(&self, nma_header: NmaHeader<NotValidated>) -> bool {
         let (message, size) = self.signature_message(nma_header);
         let message = &message[..size];
         let mut hash = Sha256::new();
@@ -651,7 +594,7 @@ impl<'a> DsmKroot<'a> {
     ///
     pub fn check_signature_p256(
         &self,
-        nma_header: NmaHeader,
+        nma_header: NmaHeader<NotValidated>,
         pubkey: &p256::ecdsa::VerifyingKey,
     ) -> bool {
         assert_eq!(self.ecdsa_function(), EcdsaFunction::P256Sha256);
@@ -672,7 +615,7 @@ impl<'a> DsmKroot<'a> {
     #[cfg(feature = "p521")]
     pub fn check_signature_p521(
         &self,
-        nma_header: NmaHeader,
+        nma_header: NmaHeader<NotValidated>,
         pubkey: &p521::ecdsa::VerifyingKey,
     ) -> bool {
         assert_eq!(self.ecdsa_function(), EcdsaFunction::P521Sha512);
@@ -692,7 +635,7 @@ impl<'a> DsmKroot<'a> {
     // The function panics if the ECDSA signature cannot be serialized, which
     // can happen if the chosen type parameters do not match the signature
     // length in the DSM-KROOT message.
-    fn check_signature<VK, C>(&self, nma_header: NmaHeader, pubkey: &VK) -> bool
+    fn check_signature<VK, C>(&self, nma_header: NmaHeader<NotValidated>, pubkey: &VK) -> bool
     where
         VK: Verifier<Signature<C>>,
         C: PrimeCurve,
@@ -1081,8 +1024,8 @@ mod test {
 
     #[test]
     fn nma_header() {
-        let header = [0x52]; // NMA header broadcast on 2022-03-07
-        let nma_header = NmaHeader(&header);
+        // NMA header broadcast on 2022-03-07
+        let nma_header = NmaHeader::new(0x52);
         assert_eq!(nma_header.nma_status(), NmaStatus::Test);
         assert_eq!(nma_header.chain_id(), 1);
         assert_eq!(
@@ -1248,8 +1191,7 @@ mod test {
             )
         );
         assert_eq!(dsm.padding(), hex!("29 89 77 35 c0 21 b0 41 73 93 b5"));
-        let nma_header = [0x52];
-        let nma_header = NmaHeader(&nma_header);
+        let nma_header = NmaHeader::new(0x52);
         assert!(dsm.check_padding(nma_header));
     }
 

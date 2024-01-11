@@ -218,8 +218,7 @@ impl<S: StaticStorage> OsnmaDsm<S> {
     fn process_subframe(&mut self, hkroot: &HkrootMessage, mack: &MackMessage, svn: Svn, gst: Gst) {
         self.data.mack.store(mack, svn, gst);
 
-        let nma_header = &hkroot[..1].try_into().unwrap();
-        let nma_header = NmaHeader(nma_header);
+        let nma_header = NmaHeader::new(hkroot[0]);
         let dsm_header = &hkroot[1..2].try_into().unwrap();
         let dsm_header = DsmHeader(dsm_header);
         let dsm_block = &hkroot[2..].try_into().unwrap();
@@ -232,20 +231,20 @@ impl<S: StaticStorage> OsnmaDsm<S> {
 }
 
 impl<S: StaticStorage> OsnmaData<S> {
-    fn process_dsm(&mut self, dsm: Dsm, nma_header: NmaHeader) {
+    fn process_dsm(&mut self, dsm: Dsm, nma_header: NmaHeader<NotValidated>) {
         match dsm.dsm_type() {
             DsmType::Kroot => self.process_dsm_kroot(DsmKroot(dsm.data()), nma_header),
             DsmType::Pkr => self.process_dsm_pkr(DsmPkr(dsm.data())),
         }
     }
 
-    fn process_dsm_kroot(&mut self, dsm_kroot: DsmKroot, nma_header: NmaHeader) {
+    fn process_dsm_kroot(&mut self, dsm_kroot: DsmKroot, nma_header: NmaHeader<NotValidated>) {
         let pkid = dsm_kroot.public_key_id();
         let Some(pubkey) = self.pubkey.applicable_pubkey(pkid) else {
             return;
         };
         match Key::from_dsm_kroot(nma_header, dsm_kroot, pubkey) {
-            Ok(key) => {
+            Ok((key, _nma_header)) => {
                 log::info!("verified KROOT with public key id {pkid}");
                 self.pubkey.make_pkid_current(pkid);
                 if self.key.is_none() {

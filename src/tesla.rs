@@ -7,7 +7,7 @@
 //! messages and authenticate the navigation data using the tags in a MACK message.
 
 use crate::bitfields::{
-    self, DsmKroot, EcdsaFunction, Mack, NmaHeader, NmaStatus, Prnd, TagAndInfo,
+    self, ChainAndPubkeyStatus, DsmKroot, EcdsaFunction, Mack, NmaStatus, Prnd, TagAndInfo,
 };
 use crate::maclt::{get_flx_indices, get_maclt_entry, AuthObject, MacLTError, MacLTSlot};
 use crate::types::{BitSlice, VerifyingKey, NUM_SVNS};
@@ -92,7 +92,10 @@ impl Chain {
     ///
     /// If all the values in the DSM-KROOT message are acceptable a `Chain` is
     /// returned. Otherwise, this returns an error indicating the problem.
-    pub fn from_dsm_kroot(nma_header: NmaHeader, dsm_kroot: DsmKroot) -> Result<Chain, ChainError> {
+    pub fn from_dsm_kroot(
+        nma_header: NmaHeader<NotValidated>,
+        dsm_kroot: DsmKroot,
+    ) -> Result<Chain, ChainError> {
         let status = match nma_header.nma_status() {
             NmaStatus::Test => ChainStatus::Test,
             NmaStatus::Operational => ChainStatus::Operational,
@@ -383,6 +386,92 @@ impl FixedOutput for MacDigest {
     }
 }
 
+/// NMA header.
+///
+/// The NMA header found in the first byte of an HKROOT message.
+/// See Figure 4 in the
+/// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
+///
+/// The `V` type parameter is used to indicate the validation status of the NMA
+/// header. An NMA header is considered valid if it has been successfully used
+/// as part of the validation of the signature of a DSM-KROOT message. See
+/// [validation](crate::validation) for a description of validation type
+/// parameters.
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
+pub struct NmaHeader<V> {
+    data: [u8; 1],
+    _validated: V,
+}
+
+impl NmaHeader<NotValidated> {
+    /// Creates a new, not validated, NMA header.
+    pub fn new(data: u8) -> NmaHeader<NotValidated> {
+        NmaHeader {
+            data: [data],
+            _validated: NotValidated {},
+        }
+    }
+}
+
+impl<V> NmaHeader<V> {
+    fn bits(&self) -> &BitSlice {
+        BitSlice::from_slice(&self.data)
+    }
+
+    /// Returns the data of the NMA header as an 8-bit integer.
+    pub fn data(&self) -> u8 {
+        self.data[0]
+    }
+
+    /// Gives the value of the NMAS (NMA status) field.
+    pub fn nma_status(&self) -> NmaStatus {
+        match self.bits()[..2].load_be::<u8>() {
+            0 => NmaStatus::Reserved,
+            1 => NmaStatus::Test,
+            2 => NmaStatus::Operational,
+            3 => NmaStatus::DontUse,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Gives the value of the CID (chain ID) field.
+    pub fn chain_id(&self) -> u8 {
+        self.bits()[2..4].load_be::<u8>()
+    }
+
+    /// Gives the value of the CPKS (chain and public key status) field.
+    pub fn chain_and_pubkey_status(&self) -> ChainAndPubkeyStatus {
+        match self.bits()[4..7].load_be::<u8>() {
+            0 => ChainAndPubkeyStatus::Reserved,
+            1 => ChainAndPubkeyStatus::Nominal,
+            2 => ChainAndPubkeyStatus::EndOfChain,
+            3 => ChainAndPubkeyStatus::ChainRevoked,
+            4 => ChainAndPubkeyStatus::NewPublicKey,
+            5 => ChainAndPubkeyStatus::PublicKeyRevoked,
+            6 => ChainAndPubkeyStatus::NewMerkleTree,
+            7 => ChainAndPubkeyStatus::AlertMessage,
+            8.. => unreachable!(), // we are only reading 3 bits
+        }
+    }
+
+    fn force_valid(self) -> NmaHeader<Validated> {
+        NmaHeader {
+            data: self.data,
+            _validated: Validated {},
+        }
+    }
+}
+
+impl<V> fmt::Debug for NmaHeader<V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NmaHeader")
+            .field("nma_status", &self.nma_status())
+            .field("chain_id", &self.chain_id())
+            .field("chain_and_pubkey_status", &self.chain_and_pubkey_status())
+            .finish()
+    }
+}
+
 /// TESLA key.
 ///
 /// This struct holds a TESLA key, its corresponding GST (the GST at the start
@@ -532,11 +621,15 @@ impl Key<Validated> {
     /// also checked using [`DsmKroot::check_padding`], the TESLA root key is
     /// returned. Otherwise, this returns an error that indicates what
     /// validation property was not satisfied.
+    ///
+    /// If validation is successful, the NMA header is considered valid as a
+    /// consequence, and an [`NmaHeader`] object marked with the [`Validated`]
+    /// validation parameter is also returned.
     pub fn from_dsm_kroot(
-        nma_header: NmaHeader,
+        nma_header: NmaHeader<NotValidated>,
         dsm_kroot: DsmKroot,
         pubkey: &PublicKey<Validated>,
-    ) -> Result<Key<Validated>, KrootValidationError> {
+    ) -> Result<(Key<Validated>, NmaHeader<Validated>), KrootValidationError> {
         let chain = Chain::from_dsm_kroot(nma_header, dsm_kroot)
             .map_err(KrootValidationError::WrongDsmKrootChain)?;
         if !dsm_kroot.check_padding(nma_header) {
@@ -561,7 +654,10 @@ impl Key<Validated> {
         let gst = Gst::new(wn, tow);
         Self::check_gst(gst);
         let gst = gst.add_seconds(-30);
-        Ok(Key::from_slice(dsm_kroot.kroot(), gst, &chain).force_valid())
+        Ok((
+            Key::from_slice(dsm_kroot.kroot(), gst, &chain).force_valid(),
+            nma_header.force_valid(),
+        ))
     }
 }
 
