@@ -100,6 +100,7 @@ impl MerkleTree {
         };
         Ok(PublicKey {
             key,
+            pkid: dsm_pkr.new_public_key_id(),
             _validated: Validated {},
         })
     }
@@ -116,7 +117,7 @@ pub enum PkrError {
     Invalid,
     /// The DSM-PKR does not contain a public key.
     NoPublicKey,
-    /// The DSM-PRK key is P521, but P521 support has not been enabled.
+    /// The DSM-PRK key is P-521, but P-521 support has not been enabled.
     #[cfg(not(feature = "p521"))]
     P521NotSupported,
 }
@@ -128,7 +129,7 @@ impl fmt::Display for PkrError {
             PkrError::Invalid => "wrong calculated Merkle tree root".fmt(f),
             PkrError::NoPublicKey => "no public key in DSM-PKR".fmt(f),
             #[cfg(not(feature = "p521"))]
-            PkrError::P521NotSupported => "P521 support disabled".fmt(f),
+            PkrError::P521NotSupported => "P-521 support disabled".fmt(f),
         }
     }
 }
@@ -139,7 +140,7 @@ impl std::error::Error for PkrError {}
 /// OSNMA public key.
 ///
 /// This is an ECDSA verifying key used as public key for the verification of
-/// the TESLA KROOT. The key can be either a P256 ECDSA key or a P521 ECDSA key
+/// the TESLA KROOT. The key can be either a P-256 ECDSA key or a P-521 ECDSA key
 /// (if the feature `p521` is enabled).
 ///
 /// The `V` type parameter is used to indicate the validation status of the
@@ -152,23 +153,38 @@ impl std::error::Error for PkrError {}
 #[derive(Debug, Clone)]
 pub struct PublicKey<V> {
     key: VerifyingKey,
+    pkid: u8,
     _validated: V,
 }
 
 impl PublicKey<NotValidated> {
-    /// Creates a new, not validated, key from a P256 ECDSA key.
-    pub fn from_p256(verifying_key: p256::ecdsa::VerifyingKey) -> PublicKey<NotValidated> {
+    /// Creates a new, not validated, key from a P-256 ECDSA key.
+    ///
+    /// The `public_key_id` parameter indicates the PKID parameter associated
+    /// with this OSNMA public key.
+    pub fn from_p256(
+        verifying_key: p256::ecdsa::VerifyingKey,
+        public_key_id: u8,
+    ) -> PublicKey<NotValidated> {
         PublicKey {
             key: verifying_key.into(),
+            pkid: public_key_id,
             _validated: NotValidated {},
         }
     }
 
-    /// Creates a new, not validated, key from a P512 ECDSA key.
+    /// Creates a new, not validated, key from a P-512 ECDSA key.
+    ///
+    /// The `public_key_id` parameter indicates the PKID parameter associated
+    /// with this OSNMA public key.
     #[cfg(feature = "p521")]
-    pub fn from_p521(verifying_key: p521::ecdsa::VerifyingKey) -> PublicKey<NotValidated> {
+    pub fn from_p521(
+        verifying_key: p521::ecdsa::VerifyingKey,
+        public_key_id: u8,
+    ) -> PublicKey<NotValidated> {
         PublicKey {
             key: verifying_key.into(),
+            pkid: public_key_id,
             _validated: NotValidated {},
         }
     }
@@ -181,8 +197,16 @@ impl PublicKey<NotValidated> {
     pub fn force_valid(self) -> PublicKey<Validated> {
         PublicKey {
             key: self.key,
+            pkid: self.pkid,
             _validated: Validated {},
         }
+    }
+}
+
+impl<V> PublicKey<V> {
+    /// Gives the public key ID associated with this key.
+    pub fn public_key_id(&self) -> u8 {
+        self.pkid
     }
 }
 

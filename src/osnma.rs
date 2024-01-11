@@ -34,7 +34,8 @@ use core::cmp::Ordering;
 ///               117, 116, 91, 202, 57, 34, 72, 200, 202, 10, 169,
 ///               253, 225, 1, 233, 82, 99, 133, 255, 241, 114, 218];
 /// let pubkey = VerifyingKey::from_sec1_bytes(&pubkey).unwrap();
-/// let pubkey = PublicKey::from_p256(pubkey);
+/// let public_key_id = 0;
+/// let pubkey = PublicKey::from_p256(pubkey, public_key_id);
 /// // Force the public key to be valid. Only do this if the key
 /// // has been loaded from a trustworthy source.
 /// let pubkey = pubkey.force_valid();
@@ -86,9 +87,15 @@ struct OsnmaData<S: StaticStorage> {
     navmessage: CollectNavMessage<S>,
     mack: MackStorage<S>,
     merkle_tree: Option<MerkleTree>,
-    pubkey: Option<PublicKey<Validated>>,
+    pubkey: PubkeyStore,
     key: Option<Key<Validated>>,
     only_slowmac: bool,
+}
+
+#[derive(Debug, Clone)]
+struct PubkeyStore {
+    current: Option<PublicKey<Validated>>,
+    next: Option<PublicKey<Validated>>,
 }
 
 impl<S: StaticStorage> Osnma<S> {
@@ -105,7 +112,8 @@ impl<S: StaticStorage> Osnma<S> {
                     navmessage: CollectNavMessage::new(),
                     mack: MackStorage::new(),
                     merkle_tree: merkle_tree_root.map(MerkleTree::new),
-                    pubkey,
+                    pubkey: pubkey
+                        .map_or_else(PubkeyStore::empty, PubkeyStore::from_current_pubkey),
                     key: None,
                     only_slowmac,
                 },
@@ -232,13 +240,14 @@ impl<S: StaticStorage> OsnmaData<S> {
     }
 
     fn process_dsm_kroot(&mut self, dsm_kroot: DsmKroot, nma_header: NmaHeader) {
-        let Some(pubkey) = &self.pubkey else {
-            log::error!("could not verify KROOT because no public key is available");
+        let pkid = dsm_kroot.public_key_id();
+        let Some(pubkey) = self.pubkey.applicable_pubkey(pkid) else {
             return;
         };
         match Key::from_dsm_kroot(nma_header, dsm_kroot, pubkey) {
             Ok(key) => {
-                log::info!("verified KROOT");
+                log::info!("verified KROOT with public key id {pkid}");
+                self.pubkey.make_pkid_current(pkid);
                 if self.key.is_none() {
                     self.key = Some(key);
                     log::info!("initializing TESLA key to {:?}", key);
@@ -254,9 +263,9 @@ impl<S: StaticStorage> OsnmaData<S> {
             return;
         };
         match merkle_tree.validate_pkr(dsm_pkr) {
-            Ok(_) => {
+            Ok(pubkey) => {
                 log::info!("verified public key in DSM-PKR: {dsm_pkr:?}");
-                // TODO: implement key update
+                self.pubkey.store_new_pubkey(pubkey);
             }
             Err(e) => log::error!("could not verify public key: {e:?}"),
         }
@@ -370,6 +379,101 @@ impl<S: StaticStorage> OsnmaData<S> {
                 None
             }
             Ok(m) => Some(m),
+        }
+    }
+}
+
+impl PubkeyStore {
+    fn empty() -> PubkeyStore {
+        PubkeyStore {
+            current: None,
+            next: None,
+        }
+    }
+
+    fn from_current_pubkey(current_key: PublicKey<Validated>) -> PubkeyStore {
+        PubkeyStore {
+            current: Some(current_key),
+            next: None,
+        }
+    }
+
+    fn check_consistency(&self) {
+        // consistency check: if next is Some, current must also be Some
+        assert!(self.next.is_none() || self.current.is_some());
+    }
+
+    fn applicable_pubkey(&self, pkid: u8) -> Option<&PublicKey<Validated>> {
+        self.check_consistency();
+        match (&self.current, &self.next) {
+            (Some(k), _) if k.public_key_id() == pkid => Some(k),
+            (_, Some(k)) if k.public_key_id() == pkid => {
+                log::info!("selecting next public key to authenticate KROOT");
+                Some(k)
+            }
+            (Some(_), _) => {
+                log::error!(
+                    "could not verify KROOT because public key with id {pkid} is not available"
+                );
+                None
+            }
+            (None, _) => {
+                log::error!("could not verify KROOT because no public key is available");
+                None
+            }
+        }
+    }
+
+    fn make_pkid_current(&mut self, pkid: u8) {
+        self.check_consistency();
+        if self.current.as_ref().map(|k| k.public_key_id()) == Some(pkid) {
+            // pkid is already current
+            return;
+        }
+        if self.next.as_ref().map(|k| k.public_key_id()) == Some(pkid) {
+            // consistency check: the PKID of self.current should be smaller
+            // (and self.current cannot be None)
+            assert!(self.current.as_ref().unwrap().public_key_id() < pkid);
+            self.current.replace(self.next.take().unwrap());
+            return;
+        }
+        // this should not be reached, because the KROOT has been authenticated
+        // with one of the keys in the store
+        panic!("inconsistent PubkeyStore state");
+    }
+
+    fn store_new_pubkey(&mut self, pubkey: PublicKey<Validated>) {
+        self.check_consistency();
+        let new_pkid = pubkey.public_key_id();
+        if let Some(current) = &self.current {
+            let curr_pkid = current.public_key_id();
+            if new_pkid < curr_pkid {
+                log::error!("received public key with id {new_pkid} smaller than current id {curr_pkid}; discarding");
+            }
+            if let Some(next) = &self.next {
+                let next_pkid = next.public_key_id();
+                match new_pkid.cmp(&next_pkid) {
+                    Ordering::Less => log::error!(
+                        "received public key with id {new_pkid} smaller than \
+                         the next id {next_pkid}; discarding"
+                    ),
+                    Ordering::Greater => {
+                        log::warn!(
+                            "received public key with id {new_pkid} greater than \
+                             the next id {next_pkid}; overwriting"
+                        );
+                        self.next = Some(pubkey);
+                    }
+                    Ordering::Equal => {
+                        // the same key is already stored; do nothing
+                    }
+                }
+            } else {
+                self.next = Some(pubkey);
+            }
+        } else {
+            // no keys are stored at this moment
+            self.current = Some(pubkey);
         }
     }
 }

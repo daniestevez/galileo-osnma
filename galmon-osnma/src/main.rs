@@ -19,17 +19,20 @@ struct Args {
     /// Path to the public key in PEM format.
     #[arg(long)]
     pubkey: Option<String>,
+    /// ID of the public key.
+    #[arg(long)]
+    pkid: Option<u8>,
     /// Only process slow MAC data.
     #[arg(long)]
     slow_mac_only: bool,
 }
 
-fn load_pubkey(path: &str) -> std::io::Result<PublicKey<Validated>> {
+fn load_pubkey(path: &str, pkid: u8) -> std::io::Result<PublicKey<Validated>> {
     let mut file = std::fs::File::open(path)?;
     let mut pem = String::new();
     file.read_to_string(&mut pem)?;
     let pubkey = VerifyingKey::from_public_key_pem(&pem).expect("invalid pubkey");
-    Ok(PublicKey::from_p256(pubkey).force_valid())
+    Ok(PublicKey::from_p256(pubkey, pkid).force_valid())
 }
 
 fn main() -> std::io::Result<()> {
@@ -42,8 +45,14 @@ fn main() -> std::io::Result<()> {
         return Ok(());
     }
 
+    if args.pubkey.is_some() != args.pkid.is_some() {
+        log::error!("the --pubkey and --pkid arguments need to be both specified together");
+        // TODO: return an error exit code
+        return Ok(());
+    }
+
     let pubkey = if let Some(pubkey_path) = &args.pubkey {
-        Some(load_pubkey(pubkey_path)?)
+        Some(load_pubkey(pubkey_path, args.pkid.unwrap())?)
     } else {
         None
     };
