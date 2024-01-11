@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use clap::Parser;
 use galileo_osnma::{
     galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport},
@@ -27,28 +28,24 @@ struct Args {
     slow_mac_only: bool,
 }
 
-fn load_pubkey(path: &str, pkid: u8) -> std::io::Result<PublicKey<Validated>> {
+fn load_pubkey(path: &str, pkid: u8) -> Result<PublicKey<Validated>> {
     let mut file = std::fs::File::open(path)?;
     let mut pem = String::new();
     file.read_to_string(&mut pem)?;
-    let pubkey = VerifyingKey::from_public_key_pem(&pem).expect("invalid pubkey");
+    let pubkey = VerifyingKey::from_public_key_pem(&pem)?;
     Ok(PublicKey::from_p256(pubkey, pkid).force_valid())
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
 
     if args.merkle_root.is_none() && args.pubkey.is_none() {
-        log::error!("at least either the Merkle tree root or the public key must be specified");
-        // TODO: return an error exit code
-        return Ok(());
+        anyhow::bail!("at least either the Merkle tree root or the public key must be specified");
     }
 
     if args.pubkey.is_some() != args.pkid.is_some() {
-        log::error!("the --pubkey and --pkid arguments need to be both specified together");
-        // TODO: return an error exit code
-        return Ok(());
+        anyhow::bail!("the --pubkey and --pkid arguments need to be both specified together");
     }
 
     let pubkey = if let Some(pubkey_path) = &args.pubkey {
@@ -58,10 +55,8 @@ fn main() -> std::io::Result<()> {
     };
 
     let mut osnma: Osnma<FullStorage> = if let Some(merkle) = &args.merkle_root {
-        let merkle = hex::decode(merkle)
-            .expect("invalid Merkle tree hex data")
-            .try_into()
-            .expect("wrong length of Merkle tree hex data");
+        let merkle = hex::decode(merkle).context("failed to parse Merkle tree root")?
+            .try_into().map_err(|_| anyhow::anyhow!("the Merkle tree root has a wrong length"))?;
         Osnma::from_merkle_tree(merkle, pubkey, args.slow_mac_only)
     } else {
         // Here pubkey shouldn't be None, because Merkle tree is None and we

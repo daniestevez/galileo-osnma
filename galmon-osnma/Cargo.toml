@@ -14,6 +14,7 @@ default-run = "galmon-osnma"
 publish = false
 
 [dependencies]
+anyhow = "1"
 clap = { version = "4.4", features = ["derive"] }
 ecdsa = { version = "0.16", features = ["pkcs8"] }
 env_logger = "0.10"

@@ -393,6 +393,7 @@ dependencies = [
 name = "galmon-osnma"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap",
  "ecdsa",
  "env_logger",
