@@ -88,7 +88,7 @@ struct OsnmaData<S: StaticStorage> {
     mack: MackStorage<S>,
     merkle_tree: Option<MerkleTree>,
     pubkey: PubkeyStore,
-    key: Option<Key<Validated>>,
+    key: KeyStore,
     only_slowmac: bool,
 }
 
@@ -96,6 +96,15 @@ struct OsnmaData<S: StaticStorage> {
 struct PubkeyStore {
     current: Option<PublicKey<Validated>>,
     next: Option<PublicKey<Validated>>,
+}
+
+// The KeyStore can hold up to two keys: the TESLA key for the current chain in
+// force, and an additional KROOT for a chain that will become in force in the
+// future.
+#[derive(Debug, Clone)]
+struct KeyStore {
+    keys: [Option<Key<Validated>>; 2],
+    in_force: Option<bool>,
 }
 
 impl<S: StaticStorage> Osnma<S> {
@@ -114,7 +123,7 @@ impl<S: StaticStorage> Osnma<S> {
                     merkle_tree: merkle_tree_root.map(MerkleTree::new),
                     pubkey: pubkey
                         .map_or_else(PubkeyStore::empty, PubkeyStore::from_current_pubkey),
-                    key: None,
+                    key: KeyStore::empty(),
                     only_slowmac,
                 },
             },
@@ -244,13 +253,11 @@ impl<S: StaticStorage> OsnmaData<S> {
             return;
         };
         match Key::from_dsm_kroot(nma_header, dsm_kroot, pubkey) {
-            Ok((key, _nma_header)) => {
+            Ok((key, nma_header)) => {
                 log::info!("verified KROOT with public key id {pkid}");
+                log::info!("current NMA header: {nma_header:?}");
                 self.pubkey.make_pkid_current(pkid);
-                if self.key.is_none() {
-                    self.key = Some(key);
-                    log::info!("initializing TESLA key to {:?}", key);
-                }
+                self.key.store_kroot(key, nma_header);
             }
             Err(e) => log::error!("could not verify KROOT: {:?}", e),
         }
@@ -271,12 +278,9 @@ impl<S: StaticStorage> OsnmaData<S> {
     }
 
     fn validate_key(&mut self, mack: &MackMessage, gst: Gst) {
-        let current_key = match self.key {
-            Some(k) => k,
-            None => {
-                log::info!("no valid TESLA key yet. unable to validate MACK key");
-                return;
-            }
+        let Some(current_key) = self.key.current_key() else {
+            log::info!("no valid TESLA key for the chain in force. unable to validate MACK key");
+            return;
         };
         let mack = Mack::new(
             mack,
@@ -305,8 +309,8 @@ impl<S: StaticStorage> OsnmaData<S> {
                             new_valid_key,
                             current_key
                         );
-                        self.key = Some(new_valid_key);
-                        self.process_tags();
+                        self.process_tags(&new_valid_key);
+                        self.key.store_key(new_valid_key);
                     }
                     Err(e) => log::error!(
                         "could not validate TESLA key {:?} using {:?}: {:?}",
@@ -319,14 +323,7 @@ impl<S: StaticStorage> OsnmaData<S> {
         }
     }
 
-    fn process_tags(&mut self) {
-        let current_key = match self.key {
-            Some(k) => k,
-            None => {
-                log::info!("no valid TESLA key yet. unable to validate MACK tags");
-                return;
-            }
-        };
+    fn process_tags(&mut self, current_key: &Key<Validated>) {
         let gst_mack = current_key.gst_subframe().add_seconds(-30);
         let gst_slowmac = gst_mack.add_seconds(-300);
         // Re-generate the key that was used for the MACSEQ of the
@@ -340,9 +337,9 @@ impl<S: StaticStorage> OsnmaData<S> {
                         current_key.chain().key_size_bits(),
                         current_key.chain().tag_size_bits(),
                     );
-                    if let Some(mack) = Self::validate_mack(mack, &current_key, svn, gst_mack) {
+                    if let Some(mack) = Self::validate_mack(mack, current_key, svn, gst_mack) {
                         self.navmessage
-                            .process_mack(mack, &current_key, svn, gst_mack);
+                            .process_mack(mack, current_key, svn, gst_mack);
                     };
                 }
             }
@@ -360,7 +357,7 @@ impl<S: StaticStorage> OsnmaData<S> {
                 // current_key is used for validation of the Slow MAC tags it contains.
                 if let Some(mack) = Self::validate_mack(mack, &slowmac_key, svn, gst_slowmac) {
                     self.navmessage
-                        .process_mack_slowmac(mack, &current_key, svn, gst_slowmac);
+                        .process_mack_slowmac(mack, current_key, svn, gst_slowmac);
                 }
             }
         }
@@ -474,5 +471,72 @@ impl PubkeyStore {
             // no keys are stored at this moment
             self.current = Some(pubkey);
         }
+    }
+}
+
+impl KeyStore {
+    fn empty() -> KeyStore {
+        KeyStore {
+            keys: [None; 2],
+            in_force: None,
+        }
+    }
+
+    fn store_kroot(&mut self, key: Key<Validated>, nma_header: NmaHeader<Validated>) {
+        let kid = key.chain().chain_id();
+        let cid = nma_header.chain_id();
+        match (&self.keys[0], &self.keys[1]) {
+            (Some(k), _) if k.chain().chain_id() == kid => {
+                // do nothing; we already have a key for the same chain
+            }
+            (_, Some(k)) if k.chain().chain_id() == kid => {
+                // do nothing; we already have a key for the same chain
+            }
+            // there is one slot vacant to place the key
+            (None, _) => {
+                log::info!("storing KROOT {key:?} in slot 0 (vacant)");
+                self.keys[0] = Some(key);
+            }
+            (_, None) => {
+                log::info!("storing KROOT {key:?} in slot 1 (vacant)");
+                self.keys[1] = Some(key);
+            }
+            (Some(k0), Some(_)) => {
+                // both slots are occupied; do not overwrite the slot for the
+                // current chain
+                if k0.chain().chain_id() == cid {
+                    log::info!("overwriting slot 1 with KROOT {key:?}");
+                    self.keys[1] = Some(key);
+                } else {
+                    log::info!("overwriting slot 0 with KROOT {key:?}");
+                    self.keys[0] = Some(key);
+                }
+            }
+        }
+        // update self.in_force
+        match (&self.keys[0], &self.keys[1]) {
+            (Some(k), _) if k.chain().chain_id() == cid => self.in_force = Some(false),
+            (_, Some(k)) if k.chain().chain_id() == cid => self.in_force = Some(true),
+            _ => self.in_force = None,
+        }
+    }
+
+    fn store_key(&mut self, key: Key<Validated>) {
+        let id = key.chain().chain_id();
+        match (&self.keys[0], &self.keys[1]) {
+            (Some(k), _) if k.chain().chain_id() == id => self.keys[0] = Some(key),
+            (_, Some(k)) if k.chain().chain_id() == id => self.keys[1] = Some(key),
+            _ => {
+                // This should not happen, because the TESLA key 'key' was
+                // validated with one of the keys stored here, so it must belong
+                // to the same chain.
+                unreachable!();
+            }
+        }
+    }
+
+    fn current_key(&self) -> Option<&Key<Validated>> {
+        self.in_force
+            .and_then(|v| self.keys[usize::from(v)].as_ref())
     }
 }
