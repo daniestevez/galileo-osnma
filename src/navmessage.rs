@@ -5,7 +5,7 @@
 //! the [`Osnma`](crate::Osnma) black box, but it can also be used directly
 //! if finer control is needed.
 
-use crate::bitfields::{Adkd, Mack};
+use crate::bitfields::{Adkd, Mack, NmaStatus};
 use crate::storage::StaticStorage;
 use crate::tesla::Key;
 use crate::types::{BitSlice, InavBand, InavWord};
@@ -310,7 +310,10 @@ impl<S: StaticStorage> CollectNavMessage<S> {
     /// `prna` is the authenticating PRN, which is the SVN that has transmitted
     /// the MACK message. The `gst_mack` parameter should be the GST
     /// corresponding to the start of the subframe when the MACK message was
-    /// transmitted.
+    /// transmitted. The `nma_status` parameter should be the value of the NMA
+    /// status field in the current NMA header. The NMA header does not need to
+    /// be validated using the DSM-KROOT, since a forged or incorrect NMA header
+    /// will simply make tag validation fail.
     ///
     /// This function ignores the ADKD=12 (Slow MAC) tags in the MACK message,
     /// since they do not correspond to `key`.
@@ -320,6 +323,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         key: &Key<Validated>,
         prna: Svn,
         gst_mack: Gst,
+        nma_status: NmaStatus,
     ) {
         log::info!("{} tag0 at {:?} COP = {}", prna, gst_mack, mack.cop());
         let gst_navmessage = gst_mack.add_seconds(-30);
@@ -336,6 +340,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                     u8::from(prna),
                     prna,
                     0,
+                    nma_status,
                     &navdata,
                     self.ced_and_status_iter_authbits_mut(),
                 );
@@ -378,6 +383,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                                     prnd,
                                     prna,
                                     j,
+                                    nma_status,
                                     &navdata,
                                     self.ced_and_status_iter_authbits_mut(),
                                 );
@@ -402,6 +408,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                                     prnd,
                                     prna,
                                     j,
+                                    nma_status,
                                     &navdata,
                                     self.timing_parameters_iter_authbits_mut(),
                                 );
@@ -432,7 +439,10 @@ impl<S: StaticStorage> CollectNavMessage<S> {
     /// message). The `prna` is the authenticating PRN, which is the SVN that
     /// has transmitted the MACK message. The `gst_mack` parameter should be the
     /// GST corresponding to the start of the subframe when the MACK message was
-    /// transmitted.
+    /// transmitted.  The `nma_status` parameter should be the value of the NMA
+    /// status field in the current NMA header. The NMA header does not need to
+    /// be validated using the DSM-KROOT, since a forged or incorrect NMA header
+    /// will simply make tag validation fail.
     ///
     /// This function ignores all the other tags in the MACK message, since they
     /// do not correspond to `key`.
@@ -442,6 +452,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         key: &Key<Validated>,
         prna: Svn,
         gst_mack: Gst,
+        nma_status: NmaStatus,
     ) {
         let gst_navmessage = gst_mack.add_seconds(-30);
         for j in 1..mack.num_tags() {
@@ -476,6 +487,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                         prnd,
                         prna,
                         j,
+                        nma_status,
                         &navdata,
                         self.ced_and_status_iter_authbits_mut(),
                     );
@@ -493,13 +505,22 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         prnd: u8,
         prna: Svn,
         tag_idx: usize,
+        nma_status: NmaStatus,
         navdata: &dyn AuthBits,
         to_add_authbits: impl Iterator<Item = &'a mut dyn AuthBits>,
     ) -> bool {
         let ctr = (tag_idx + 1).try_into().unwrap();
         let ret = match tag_idx {
-            0 => key.validate_tag0(tag, gst_tag, prna, navdata.message_bits()),
-            _ => key.validate_tag(tag, gst_tag, prnd, prna, ctr, navdata.message_bits()),
+            0 => key.validate_tag0(tag, gst_tag, prna, nma_status, navdata.message_bits()),
+            _ => key.validate_tag(
+                tag,
+                gst_tag,
+                prnd,
+                prna,
+                ctr,
+                nma_status,
+                navdata.message_bits(),
+            ),
         };
         if ret {
             log::info!(

@@ -239,7 +239,7 @@ impl<S: StaticStorage> OsnmaDsm<S> {
             self.data.process_dsm(dsm, nma_header);
         }
 
-        self.data.validate_key(mack, gst);
+        self.data.validate_key(mack, gst, nma_header.nma_status());
     }
 }
 
@@ -362,7 +362,7 @@ impl<S: StaticStorage> OsnmaData<S> {
         }
     }
 
-    fn validate_key(&mut self, mack: &MackMessage, gst: Gst) {
+    fn validate_key(&mut self, mack: &MackMessage, gst: Gst, nma_status: NmaStatus) {
         let Some(current_key) = self.key.current_key() else {
             log::info!("no valid TESLA key for the chain in force. unable to validate MACK key");
             return;
@@ -394,7 +394,7 @@ impl<S: StaticStorage> OsnmaData<S> {
                             new_valid_key,
                             current_key
                         );
-                        self.process_tags(&new_valid_key);
+                        self.process_tags(&new_valid_key, nma_status);
                         self.key.store_key(new_valid_key);
                     }
                     Err(e) => log::error!(
@@ -408,7 +408,7 @@ impl<S: StaticStorage> OsnmaData<S> {
         }
     }
 
-    fn process_tags(&mut self, current_key: &Key<Validated>) {
+    fn process_tags(&mut self, current_key: &Key<Validated>, nma_status: NmaStatus) {
         if self.dont_use {
             return;
         }
@@ -428,7 +428,7 @@ impl<S: StaticStorage> OsnmaData<S> {
                     );
                     if let Some(mack) = Self::validate_mack(mack, current_key, svn, gst_mack) {
                         self.navmessage
-                            .process_mack(mack, current_key, svn, gst_mack);
+                            .process_mack(mack, current_key, svn, gst_mack, nma_status);
                     };
                 }
             }
@@ -445,8 +445,13 @@ impl<S: StaticStorage> OsnmaData<S> {
                 // Note that slowmac_key is used for validation of the MACK, while
                 // current_key is used for validation of the Slow MAC tags it contains.
                 if let Some(mack) = Self::validate_mack(mack, &slowmac_key, svn, gst_slowmac) {
-                    self.navmessage
-                        .process_mack_slowmac(mack, current_key, svn, gst_slowmac);
+                    self.navmessage.process_mack_slowmac(
+                        mack,
+                        current_key,
+                        svn,
+                        gst_slowmac,
+                        nma_status,
+                    );
                 }
             }
         }

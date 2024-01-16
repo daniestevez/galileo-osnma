@@ -33,31 +33,13 @@ const MAX_KEY_BYTES: usize = 32;
 /// constructed from a DSK-KROOT message using [`Chain::from_dsm_kroot`].
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Chain {
-    status: ChainStatus,
     id: u8,
-    // TODO: decide if CPKS needs to be included here (and how)
     hash_function: HashFunction,
     mac_function: MacFunction,
     key_size_bytes: usize,
     tag_size_bits: usize,
     maclt: u8,
     alpha: u64,
-}
-
-/// Chain status.
-///
-/// This gives the chain status for a valid TESLA chain. This roughly
-/// corresponds to the NMA status [`NmaStatus`],
-/// but "don't use" and "reserved" are not considered valid statuses for a TESLA
-/// chain.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum ChainStatus {
-    /// Test (corresponds to NMAS = 1).
-    Test,
-    /// Operational (corresponds to NMAS = 2).
-    Operational,
-    /// Don't use (corresponds to NMAS = 3).
-    DontUse,
 }
 
 /// Hash function.
@@ -89,21 +71,9 @@ pub enum MacFunction {
 impl Chain {
     /// Extract the chain parameters from a DSM-KROOT message.
     ///
-    /// The corresponding NMA header needs to be given, in order to extract the
-    /// [`ChainStatus`] from the NMA status field.
-    ///
     /// If all the values in the DSM-KROOT message are acceptable a `Chain` is
     /// returned. Otherwise, this returns an error indicating the problem.
-    pub fn from_dsm_kroot(
-        nma_header: NmaHeader<NotValidated>,
-        dsm_kroot: DsmKroot,
-    ) -> Result<Chain, ChainError> {
-        let status = match nma_header.nma_status() {
-            NmaStatus::Test => ChainStatus::Test,
-            NmaStatus::Operational => ChainStatus::Operational,
-            NmaStatus::DontUse => ChainStatus::DontUse,
-            NmaStatus::Reserved => return Err(ChainError::ReservedField),
-        };
+    pub fn from_dsm_kroot(dsm_kroot: DsmKroot) -> Result<Chain, ChainError> {
         let hash_function = match dsm_kroot.hash_function() {
             bitfields::HashFunction::Sha256 => HashFunction::Sha256,
             bitfields::HashFunction::Sha3_256 => HashFunction::Sha3_256,
@@ -123,8 +93,7 @@ impl Chain {
         };
         let tag_size_bits = dsm_kroot.tag_size().ok_or(ChainError::ReservedField)?;
         Ok(Chain {
-            status,
-            id: nma_header.chain_id(),
+            id: dsm_kroot.kroot_chain_id(),
             hash_function,
             mac_function,
             key_size_bytes,
@@ -132,11 +101,6 @@ impl Chain {
             maclt: dsm_kroot.mac_lookup_table(),
             alpha: dsm_kroot.alpha(),
         })
-    }
-
-    /// Gives the status of the TESLA chain.
-    pub fn chain_status(&self) -> ChainStatus {
-        self.status
     }
 
     /// Gives the chain ID of the TESLA chain.
@@ -629,8 +593,8 @@ impl Key<Validated> {
         dsm_kroot: DsmKroot,
         pubkey: &PublicKey<Validated>,
     ) -> Result<(Key<Validated>, NmaHeader<Validated>), KrootValidationError> {
-        let chain = Chain::from_dsm_kroot(nma_header, dsm_kroot)
-            .map_err(KrootValidationError::WrongDsmKrootChain)?;
+        let chain =
+            Chain::from_dsm_kroot(dsm_kroot).map_err(KrootValidationError::WrongDsmKrootChain)?;
         if !dsm_kroot.check_padding(nma_header) {
             return Err(KrootValidationError::WrongDsmKrootPadding);
         }
@@ -806,7 +770,10 @@ impl Key<Validated> {
     /// according to Section 6.7 in the ICD. The `ctr` parameter is the index of
     /// the tag, where the first tag in a MACK message has `ctr = 1`. Note that
     /// [`Key::validate_tag0`] should be used to validate the tag0 in a MACK
-    /// message instead of this function.
+    /// message instead of this function. The `nma_status` parameter should be
+    /// the value of the NMA status field in the current NMA header. The NMA
+    /// header does not need to be validated using the DSM-KROOT, since a forged
+    /// or incorrect NMA header will simply make tag validation fail.
     ///
     /// Note that the navigation data `navdata` must correspond to the previous
     /// subframe of the tag, and the key `self` must correspond to the next
@@ -817,6 +784,7 @@ impl Key<Validated> {
     ///
     /// This returns `true` if the validation was succesful. Otherwise, it
     /// returns `false`.
+    #[allow(clippy::too_many_arguments)]
     pub fn validate_tag(
         &self,
         tag: &BitSlice,
@@ -824,11 +792,12 @@ impl Key<Validated> {
         prnd: u8,
         prna: Svn,
         ctr: u8,
+        nma_status: NmaStatus,
         navdata: &BitSlice,
     ) -> bool {
         let mut mac = self.mac_digest();
         mac.update(&[prnd]);
-        self.update_common_tag_message(&mut mac, tag_gst, prna, ctr, navdata);
+        self.update_common_tag_message(&mut mac, tag_gst, prna, ctr, nma_status, navdata);
         self.check_common(mac, tag)
     }
 
@@ -840,7 +809,11 @@ impl Key<Validated> {
     ///
     /// The `tag_gst` parameter should give the GST at the start of the subframe
     /// when the `tag` was transmitted. The `prna` parameter corresponds to the
-    /// SVN of the satellite that transmitted the tag0.
+    /// SVN of the satellite that transmitted the tag0. The `nma_status`
+    /// parameter should be the value of the NMA status field in the current NMA
+    /// header. The NMA header does not need to be validated using the
+    /// DSM-KROOT, since a forged or incorrect NMA header will simply make tag
+    /// validation fail.
     ///
     /// Note that the navigation data `navdata` must correspond to the previous
     /// subframe of the tag0, and the key `self` must correspond to the next
@@ -853,10 +826,11 @@ impl Key<Validated> {
         tag0: &BitSlice,
         tag_gst: Gst,
         prna: Svn,
+        nma_status: NmaStatus,
         navdata: &BitSlice,
     ) -> bool {
         let mut mac = self.mac_digest();
-        self.update_common_tag_message(&mut mac, tag_gst, prna, 1, navdata);
+        self.update_common_tag_message(&mut mac, tag_gst, prna, 1, nma_status, navdata);
         self.check_common(mac, tag0)
     }
 
@@ -871,6 +845,7 @@ impl Key<Validated> {
         gst: Gst,
         prna: Svn,
         ctr: u8,
+        nma_status: NmaStatus,
         navdata: &BitSlice,
     ) {
         // This is large enough to fit all the message for ADKD=0 and 12
@@ -884,10 +859,11 @@ impl Key<Validated> {
         buffer[5] = ctr;
         let remaining_bits = BitSlice::from_slice_mut(&mut buffer[6..]);
         const STATUS_BITS: usize = 2;
-        remaining_bits[..STATUS_BITS].store_be(match self.chain.status {
-            ChainStatus::Test => 1,
-            ChainStatus::Operational => 2,
-            ChainStatus::DontUse => 3,
+        remaining_bits[..STATUS_BITS].store_be(match nma_status {
+            NmaStatus::Reserved => 0,
+            NmaStatus::Test => 1,
+            NmaStatus::Operational => 2,
+            NmaStatus::DontUse => 3,
         });
         remaining_bits[STATUS_BITS..STATUS_BITS + navdata.len()].copy_from_bitslice(navdata);
         let message_bytes = FIXED_SIZE + (STATUS_BITS + navdata.len() + 7) / 8;
@@ -1000,7 +976,6 @@ mod test {
     fn test_chain() -> Chain {
         // Active chain on 2022-03-07 ~09:00 UTC
         Chain {
-            status: ChainStatus::Test,
             id: 1,
             hash_function: HashFunction::Sha256,
             mac_function: MacFunction::HmacSha256,
@@ -1014,7 +989,6 @@ mod test {
     fn test_chain_2023() -> Chain {
         // Active chain on 2023-12-12 ~10:00 UTC
         Chain {
-            status: ChainStatus::Test,
             id: 0,
             hash_function: HashFunction::Sha256,
             mac_function: MacFunction::HmacSha256,
@@ -1082,7 +1056,7 @@ mod test {
             01 7f fd 87 d0 fe 85 ee 31 ff f6 20 0c 68 0b fe
             48 00 50 14 00"
         ))[..549];
-        assert!(key.validate_tag0(tag0, tag0_gst, prna, navdata_adkd0));
+        assert!(key.validate_tag0(tag0, tag0_gst, prna, NmaStatus::Test, navdata_adkd0));
     }
 
     fn test_mack() -> Mack<'static, NotValidated> {
