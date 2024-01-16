@@ -528,6 +528,19 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         }
         ret
     }
+
+    /// Resets all the authentication bits to zero.
+    ///
+    /// This function can be called when the NMA status is set to don't use in
+    /// order to discard all the previously generated authentication bits.
+    pub fn reset_authbits(&mut self) {
+        for ced in self.ced_and_status.iter_mut() {
+            ced.reset_authbits();
+        }
+        for timing in self.timing_parameters.iter_mut() {
+            timing.reset_authbits();
+        }
+    }
 }
 
 impl<S: StaticStorage> Default for CollectNavMessage<S> {
@@ -566,6 +579,7 @@ trait AuthBits {
     fn svn(&self) -> Option<Svn>;
     fn message_bits(&self) -> &BitSlice;
     fn add_authbits(&mut self, tag: &BitSlice);
+    fn reset_authbits(&mut self);
 }
 
 macro_rules! impl_common {
@@ -640,6 +654,10 @@ macro_rules! impl_common {
 
             fn add_authbits(&mut self, tag: &BitSlice) {
                 self.authbits = self.authbits.saturating_add(tag.len().try_into().unwrap());
+            }
+
+            fn reset_authbits(&mut self) {
+                self.authbits = 0;
             }
         }
 

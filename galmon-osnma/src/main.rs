@@ -55,8 +55,10 @@ fn main() -> Result<()> {
     };
 
     let mut osnma: Osnma<FullStorage> = if let Some(merkle) = &args.merkle_root {
-        let merkle = hex::decode(merkle).context("failed to parse Merkle tree root")?
-            .try_into().map_err(|_| anyhow::anyhow!("the Merkle tree root has a wrong length"))?;
+        let merkle = hex::decode(merkle)
+            .context("failed to parse Merkle tree root")?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("the Merkle tree root has a wrong length"))?;
         Osnma::from_merkle_tree(merkle, pubkey, args.slow_mac_only)
     } else {
         // Here pubkey shouldn't be None, because Merkle tree is None and we

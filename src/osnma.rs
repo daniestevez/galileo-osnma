@@ -1,4 +1,6 @@
-use crate::bitfields::{DsmHeader, DsmKroot, DsmPkr, DsmType, Mack, NmaHeader};
+use crate::bitfields::{
+    ChainAndPubkeyStatus, DsmHeader, DsmKroot, DsmPkr, DsmType, Mack, NmaHeader, NmaStatus,
+};
 use crate::dsm::{CollectDsm, Dsm};
 use crate::mack::MackStorage;
 use crate::merkle_tree::MerkleTree;
@@ -90,6 +92,7 @@ struct OsnmaData<S: StaticStorage> {
     pubkey: PubkeyStore,
     key: KeyStore,
     only_slowmac: bool,
+    dont_use: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -125,6 +128,7 @@ impl<S: StaticStorage> Osnma<S> {
                         .map_or_else(PubkeyStore::empty, PubkeyStore::from_current_pubkey),
                     key: KeyStore::empty(),
                     only_slowmac,
+                    dont_use: false,
                 },
             },
         }
@@ -258,9 +262,90 @@ impl<S: StaticStorage> OsnmaData<S> {
                 log::info!("current NMA header: {nma_header:?}");
                 self.pubkey.make_pkid_current(pkid);
                 self.key.store_kroot(key, nma_header);
+                self.process_nma_header(nma_header, pkid);
             }
             Err(e) => log::error!("could not verify KROOT: {:?}", e),
         }
+    }
+
+    fn process_nma_header(&mut self, nma_header: NmaHeader<Validated>, pkid: u8) {
+        match nma_header.nma_status() {
+            NmaStatus::Operational => {
+                self.dont_use = false;
+            }
+            NmaStatus::Test => {
+                log::info!("NMA status is test");
+                self.dont_use = false;
+            }
+            NmaStatus::Reserved => {
+                log::error!("NMA status has a reserved value; assuming don't use");
+                self.set_dont_use();
+            }
+            NmaStatus::DontUse => {
+                log::warn!("NMA status is don't use");
+                self.set_dont_use();
+                match nma_header.chain_and_pubkey_status() {
+                    ChainAndPubkeyStatus::ChainRevoked => {
+                        // current chain is revoked
+                        self.key.revoke(nma_header.chain_id());
+                    }
+                    ChainAndPubkeyStatus::PublicKeyRevoked => {
+                        // Current pubkey is revoked. However, according to
+                        // Figure 13 in the OSNMA SIS ICD v1.1, when this
+                        // happens, the PRK and KROOT already refer to the new
+                        // valid pubkey, so pkid is a valid key, and what needs
+                        // to be done is to revoke all the earlier keys.
+                        self.pubkey.revoke(pkid);
+                        // Revokation of a public key also implies a change of
+                        // chain. See 5.4.1 in the OSNMA SIS ICD v1.1
+                        self.key.revoke(nma_header.chain_id());
+                    }
+                    _ => (),
+                }
+            }
+        }
+        let this_one = !matches!(
+            nma_header.nma_status(),
+            NmaStatus::Operational | NmaStatus::Test
+        );
+        match nma_header.chain_and_pubkey_status() {
+            ChainAndPubkeyStatus::Reserved => {
+                log::error!("CPKS has a reserved value");
+            }
+            ChainAndPubkeyStatus::Nominal => (),
+            ChainAndPubkeyStatus::EndOfChain => {
+                log::info!("CPKS is end-of-chain");
+            }
+            ChainAndPubkeyStatus::ChainRevoked => {
+                log::warn!(
+                    "CPKS is chain revoked: {} chain has been revoked",
+                    if this_one { "current" } else { "previous" }
+                );
+            }
+            ChainAndPubkeyStatus::NewPublicKey => {
+                log::info!("CPKS is new public key");
+            }
+            ChainAndPubkeyStatus::PublicKeyRevoked => {
+                log::warn!(
+                    "CPKS is public key revoked: {} key has been revoked",
+                    if this_one { "current" } else { "past" }
+                );
+            }
+            ChainAndPubkeyStatus::NewMerkleTree => {
+                log::warn!("CPKS is new Merkle tree");
+            }
+            ChainAndPubkeyStatus::AlertMessage => {
+                log::warn!("CPKS is alert message; deleting all cryptographic material");
+                self.merkle_tree = None;
+                self.pubkey = PubkeyStore::empty();
+                self.key = KeyStore::empty();
+            }
+        }
+    }
+
+    fn set_dont_use(&mut self) {
+        self.dont_use = true;
+        self.navmessage.reset_authbits();
     }
 
     fn process_dsm_pkr(&mut self, dsm_pkr: DsmPkr) {
@@ -324,6 +409,10 @@ impl<S: StaticStorage> OsnmaData<S> {
     }
 
     fn process_tags(&mut self, current_key: &Key<Validated>) {
+        if self.dont_use {
+            return;
+        }
+
         let gst_mack = current_key.gst_subframe().add_seconds(-30);
         let gst_slowmac = gst_mack.add_seconds(-300);
         // Re-generate the key that was used for the MACSEQ of the
@@ -445,6 +534,11 @@ impl PubkeyStore {
             let curr_pkid = current.public_key_id();
             if new_pkid < curr_pkid {
                 log::error!("received public key with id {new_pkid} smaller than current id {curr_pkid}; discarding");
+                return;
+            }
+            if new_pkid == curr_pkid {
+                // key is already stored in current
+                return;
             }
             if let Some(next) = &self.next {
                 let next_pkid = next.public_key_id();
@@ -470,6 +564,26 @@ impl PubkeyStore {
         } else {
             // no keys are stored at this moment
             self.current = Some(pubkey);
+        }
+    }
+
+    fn revoke(&mut self, new_pkid: u8) {
+        let matches = |k: &PublicKey<Validated>| k.public_key_id() < new_pkid;
+        if self.current.as_ref().map_or(false, matches) {
+            log::warn!(
+                "revoking pubkeys earlier than pkid {new_pkid}: \
+                        revoking current pubkey {:?}",
+                self.current
+            );
+            self.current = None;
+        }
+        if self.next.as_ref().map_or(false, matches) {
+            log::warn!(
+                "revoking pubkeys earlier than pkid {new_pkid}: \
+                        next pubkey {:?}",
+                self.next
+            );
+            self.current = None;
         }
     }
 }
@@ -538,5 +652,16 @@ impl KeyStore {
     fn current_key(&self) -> Option<&Key<Validated>> {
         self.in_force
             .and_then(|v| self.keys[usize::from(v)].as_ref())
+    }
+
+    fn revoke(&mut self, cid: u8) {
+        for k in &mut self.keys {
+            if let Some(key) = k {
+                if key.chain().chain_id() == cid {
+                    log::warn!("revoking TESLA key {:?}", key);
+                    *k = None;
+                }
+            }
+        }
     }
 }

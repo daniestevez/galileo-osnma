@@ -56,6 +56,8 @@ pub enum ChainStatus {
     Test,
     /// Operational (corresponds to NMAS = 2).
     Operational,
+    /// Don't use (corresponds to NMAS = 3).
+    DontUse,
 }
 
 /// Hash function.
@@ -99,7 +101,7 @@ impl Chain {
         let status = match nma_header.nma_status() {
             NmaStatus::Test => ChainStatus::Test,
             NmaStatus::Operational => ChainStatus::Operational,
-            NmaStatus::DontUse => return Err(ChainError::NmaDontUse),
+            NmaStatus::DontUse => ChainStatus::DontUse,
             NmaStatus::Reserved => return Err(ChainError::ReservedField),
         };
         let hash_function = match dsm_kroot.hash_function() {
@@ -245,15 +247,12 @@ pub enum ChainError {
     /// One of the fields holding information about the TESLA chain has a
     /// reserved value.
     ReservedField,
-    /// The NMA status is set to "don't use".
-    NmaDontUse,
 }
 
 impl fmt::Display for ChainError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ChainError::ReservedField => "reserved value present in some field".fmt(f),
-            ChainError::NmaDontUse => "NMA status is \"don't use\"".fmt(f),
         }
     }
 }
@@ -888,6 +887,7 @@ impl Key<Validated> {
         remaining_bits[..STATUS_BITS].store_be(match self.chain.status {
             ChainStatus::Test => 1,
             ChainStatus::Operational => 2,
+            ChainStatus::DontUse => 3,
         });
         remaining_bits[STATUS_BITS..STATUS_BITS + navdata.len()].copy_from_bitslice(navdata);
         let message_bytes = FIXED_SIZE + (STATUS_BITS + navdata.len() + 7) / 8;
