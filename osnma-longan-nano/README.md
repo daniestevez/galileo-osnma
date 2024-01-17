@@ -18,19 +18,23 @@ The instructions to set up the Rust riscv32imac toolchain can be found in the
 documentation for the [longan-nano](https://github.com/riscv-rust/longan-nano)
 crate.
 
-The OSNMA ECDSA P-256 public key is embedded in the binary during the build
-process. The public key is taken from the `pubkey.pem` file found in the root
-folder of this crate. A "fake" public key is provided so that osnma-longan-demo
-can be built without access to the authentic public key. A binary built with
-this fake public key will not work with the Galileo signal in space, since
-it will not be able to validate the TESLA root key.
+The OSNMA ECDSA P-256 public key and the Merkle tree root are embedded in the
+binary during the build process. The public key is taken from the `pubkey.pem`
+file found in the root folder of this crate, and its Public Key ID is taken from
+the `pubkey_id.txt` file. The Merkle tree root is taken from the
+`merkle_tree_root.txt` file. "Fake" files are provided so that osnma-longan-demo
+can be built without access to the real cryptographic material. A binary built with
+this fake cryptographic material will not work with the Galileo signal-in-space.
 
 The fake `pubkey.pem` needs to be replaced with the authentic key, using the
 same PEM file format. Instructions about how to obtain the authentic public key
-can be found in the
-[galileo-osnma README](https://github.com/daniestevez/galileo-osnma#quick-start-using-galmon).
+can be found in the [galileo-osnma
+README](https://github.com/daniestevez/galileo-osnma#quick-start-using-galmon).
+Likewise the Public Key ID in `pubkey_id.txt` needs to be replaced by the
+correct one, and the Merkle tree root needs to be written to the file
+`merkle_tree_root.txt`.
 
-Once the file `pubkey.pem` contains the authentic public key, the crate can be
+Once these files contain the real cryptographic material, the firmware can be
 built using
 ```
 cargo build --release

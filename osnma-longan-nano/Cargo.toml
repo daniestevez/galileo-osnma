@@ -22,6 +22,7 @@ panic-halt = "0.2"
 riscv-rt = "0.11"
 
 [build-dependencies]
+hex = "0.4"
 ecdsa = { version = "0.16", features = ["pkcs8"] }
 p256 = { version = "0.13", features = ["ecdsa"] }
 spki = { version = "0.7", features = ["pem"] }

@@ -15,8 +15,12 @@ use panic_halt as _;
 use riscv_rt::entry;
 
 // The OSNMA public key, as a [u8; N] constant, is generated from pubkey.pem in
-// the build script and included here.
+// the build script and included here, together with is public key ID (generated
+// from pubkey_id.txt).
 include!(concat!(env!("OUT_DIR"), "/osnma_pubkey.rs"));
+// The OSNMA Merkle tree root, as a [u8; 32] constant, is generated from
+// merkle_tree_root.txt in the build script and included here.
+include!(concat!(env!("OUT_DIR"), "/osnma_merkle_tree.rs"));
 
 struct Board {
     tx: serial::Tx<USART0>,
@@ -78,7 +82,8 @@ impl OsnmaInterface {
     fn new(board: Board) -> OsnmaInterface {
         let pubkey = VerifyingKey::from_sec1_bytes(&OSNMA_PUBKEY).unwrap();
         let pubkey = PublicKey::from_p256(pubkey, OSNMA_PUBKEY_ID).force_valid();
-        let osnma = Osnma::<SmallStorage>::from_pubkey(pubkey, false);
+        let osnma =
+            Osnma::<SmallStorage>::from_merkle_tree(OSNMA_MERKLE_TREE_ROOT, Some(pubkey), false);
         OsnmaInterface { osnma, board }
     }
 

@@ -25,6 +25,24 @@ fn pubkey_to_rust(pubkey: &[u8], pubkey_id: u8, path: &Path) -> std::io::Result<
     )
 }
 
+fn read_merkle_tree_root(path: &str) -> std::io::Result<[u8; 32]> {
+    let hex = fs::read_to_string(path)?;
+    Ok(hex::decode(hex.trim())
+        .expect("invalid Merkle tree root")
+        .try_into()
+        .unwrap())
+}
+
+fn merkle_tree_to_rust(merkle_tree_root: &[u8; 32], path: &Path) -> std::io::Result<()> {
+    fs::write(
+        path,
+        format!(
+            "const OSNMA_MERKLE_TREE_ROOT: [u8; 32] = {:?};\n",
+            merkle_tree_root,
+        ),
+    )
+}
+
 fn main() {
     // Put the memory definition somewhere the linker can find it
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -37,4 +55,8 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=pubkey.pem");
     println!("cargo:rerun-if-changed=pubkey_id.txt");
+
+    let merkle_tree_root = read_merkle_tree_root("merkle_tree_root.txt").unwrap();
+    merkle_tree_to_rust(&merkle_tree_root, &out_dir.join("osnma_merkle_tree.rs")).unwrap();
+    println!("cargo:rerun-if-changed=merkle_tree_root.txt");
 }
