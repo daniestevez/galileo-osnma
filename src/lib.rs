@@ -5,8 +5,9 @@
 //! Galileo GNSS to sign cryptographically the navigation message data
 //! transmitted by its satellites, in order to prevent spoofing. Briefly
 //! speaking, galileo-osnma can process the navigation message data and OSNMA
-//! cryptographic data and check all the cryptographic signatures against the
-//! ECDSA public key, in order to check the authenticity of the navigation data.
+//! cryptographic data and check all the cryptographic data against an ECDSA
+//! public key and/or Merkle tree, in order to check the authenticity of the
+//! navigation data.
 //!
 //! This library provides an [`Osnma`] struct that implements the OSNMA
 //! authentication as a black box. A user can feed data from INAV pages into
@@ -47,6 +48,9 @@
 //! `std`. Additionally, the crate supports the following features:
 //! * `galmon`. This enables support for reading the Galmon transport protocol
 //!    and requires `std`.
+//! * `p521`. This enables support for ECDSA P-521 public keys. These public keys
+//!    defined in the OSNMA ICD, but currently only ECDSA P-256 keys are used in
+//!    the signal-in-space.
 
 #![warn(missing_docs)]
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]

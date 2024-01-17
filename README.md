@@ -11,13 +11,13 @@ Navigation Message Authentication) protocol. This protocol is used by the
 Galileo GNSS to sign cryptographically the navigation message data transmitted
 by its satellites, in order to prevent spoofing. Briefly speaking, galileo-osnma
 can process the navigation message data and OSNMA cryptographic data and check
-all the cryptographic signatures against the ECDSA public key, in order to check
-the authenticity of the navigation data.
+all the cryptographic signatures against an ECDSA public key and/or Merkle tree,
+in order to check the authenticity of the navigation data.
 
 galileo-osnma does not require the Rust Standard library (it can be built with
 `no_std`), allocates all its data statically on the stack, and has a relatively
-small memory footprint for the data (~65 KiB if Slow MAC is used and data for 36
-satellites in parallel is stored, and ~7 KiB if Slow MAC is not used and data
+small memory footprint for the data (~76 KiB if Slow MAC is used and data for 36
+satellites in parallel is stored, and ~8.5 KiB if Slow MAC is not used and data
 for only 12 satellites in parallel is stored). This makes it possible to use the
 library in some embedded microcontrollers. A demo of galileo-osnma running in a
 [Longan nano](https://longan.sipeed.com/en/) GD32VF103 board is provided in the
@@ -40,8 +40,8 @@ The following reference documents from the Galileo system are relevant:
 
 ## Quick start using Galmon
 
-galileo-osnma comes with a small binary application that can read Galileo INAV
-pages using the [Galmon](https://github.com/berthubert/galmon) [transport
+galileo-osnma comes with a binary application that can read Galileo INAV pages
+using the [Galmon](https://github.com/berthubert/galmon) [transport
 protocol](https://github.com/berthubert/galmon#internals). This is located in
 the `galmon-osnma` folder.
 
@@ -49,47 +49,80 @@ A quick way to see this working is to use the Galmon Galileo navigation data
 feed, which streams from 86.82.68.237, TCP port 10000. From the `galmon-osnma`
 folder, we can run
 ```
-nc 86.82.68.237 10000 | RUST_LOG=info cargo run --release osnma-pubkey.pem
+nc 86.82.68.237 10000 | \
+    RUST_LOG=info cargo run --release -- --pubkey osnma-pubkey.pem --pkid N
 ```
 to see galileo-osnma processing the OSNMA and navigation data streamed by Galmon.
 The [env_logger](https://docs.rs/env_logger/latest/env_logger/) documentation describes
 how the logging information produced by this application can be configured.
 
-The file `osnma-pubkey.pem` should contain the Galileo OSNMA public key. See the
-section below for how to obtain the key.
+The file `osnma-pubkey.pem` should contain the Galileo OSNMA public key, and the
+number `N` should be its associated Public Key ID (PKID). See the section below
+for how to obtain this data.
 
-Note that Galmon aggregates data from many receivers around the world, which is
-not the expected use case for galileo-osnma. Therefore, when running this,
-there can be some small problems with data or timestamps inconsistencies.
+Note that Galmon aggregates data from many receivers around the world and
+packets occasionally arrive out-of-order in the stream. This is not the main
+expected use case for galileo-osnma. Therefore, when running this, there can be
+some small problems with data or timestamps inconsistencies.
 
 Alternatively, you can use one of the tools of Galmon with your own GNSS
 receiver. For instance, an uBlox receiver can be used as
 ```
-ubxtool --wait --port /dev/ttyACM0 --station 1 --stdout --galileo | RUST_LOG=info cargo run --release osnma-pubkey.pem
+ubxtool --wait --port /dev/ttyACM0 --station 1 --stdout --galileo \
+    | RUST_LOG=info cargo run --release -- --pubkey osnma-pubkey.pem --pkid N
 ```
 
-## Obtaining the Galileo OSNMA public key
+## Obtaining the Galileo OSNMA public key and Merkle tree root
 
-The OSNMA ECDSA public key needs to be obtained to run `galmon-osnma` and other
-example applications, as well as to make full use of the library. The key can be
+The OSNMA ECDSA public key and/or the Merkle tree root need to be obtained to
+run `galmon-osnma` and other example applications, as well as to make full use
+of the library. The current ECDSA public key is needed to validate OSNMA
+cryptographic data (more precisely, TESLA root keys) transmitted in the
+signal-in-space. The Merkle tree root is needed to validate ECDSA public keys
+broadcast in the signal-in-space. These keys are transmitted only every 6
+hours (at 00:00, 06:00, 12:00, and 18:00 GST).
+
+The `galmon-osnma` application can be run using either the ECDSA public key
+(using the `--pubkey` and `--pkid` arguments), the Merkle tree root (using the
+`--merkle-root` argument), or both. If only the ECDSA public key is given, the
+application will not be able to use new public keys that are broadcast in the
+signal-in-space for a public key renewal or revocation. If only the Merkle tree
+root is given, it will be necessary to wait until the current ECDSA public key
+is broadcast in the signal-in-space.
+
+The public key and the Merkle tree root can be
 downloaded from the [European GNSS Service Centre](https://www.gsc-europa.eu/),
 under [GSC Products > OSNMA_PUBLICKEY](https://www.gsc-europa.eu/gsc-products/OSNMA/PKI).
-It is necessary to register an account to obtain the key.
+It is necessary to register an account to obtain these files.
 
-The key is downloaded in an x509 certificate. The current certificate file is
-`OSNMA_PublicKey_20231213105953_newPKID_2.crt`. The key in PEM format, as
-required by `galmon-osnma` can be extracted with
+The public key is downloaded as an x509 certificate. The Public Key ID is included
+in the filename, and it is also listed elsewhere in the GSC Products website.
+The current certificate file is `OSNMA_PublicKey_20231213105953_newPKID_2.crt`,
+and the corresponding Public Key ID is `2`. The key in PEM format, as required by
+`galmon-osnma` can be extracted with
 ```
 openssl x509 -in OSNMA_PublicKey_20231213105953_newPKID_2.crt  -noout -pubkey > osnma-pubkey.pem
 ```
 
+The Merkle tree information is downloaded in an XML file. Only the tree root is
+needed. This corresponds to the following entry in the XML file:
+```xml
+<TreeNode><j>4</j><i>0</i><lengthInBits>256</lengthInBits><x_ji>...</x_ji></TreeNode>
+```
+The tree root is given as a 256-bit hexadecimal number in place of the `...`. This
+256-bit hexadecimal format is the one that is directly used by the `galmon-osnma`
+`--merkle-root` argument. The tree root is also listed in other parts of the GSC Products
+website.
+
 ## Development status
 
 galileo-osnma has been usable since its first release during the public test
-phase of OSNMA, and now that the service phase has begun. phase of OSNMA. It
-can authenticate all the types of navigation data currently supported by OSNMA
-using the ECDSA P-256 public key. There are some features of the OSNMA protocol
-and some roadmap features that are not implemented yet. These are listed below.
+phase of OSNMA, and then updated for the OSNMA ICD changes done in the service
+phase. Currently it is in-line with the OSNMA SIS ICD v1.1. galileo-osnma can
+authenticate all the types of navigation data currently supported by OSNMA using
+the ECDSA public keys and Merkle tree. There are some features of the OSNMA
+protocol and some roadmap features that are not implemented yet. These are
+listed below.
 
 Supported features:
 
@@ -98,8 +131,9 @@ Supported features:
   untested, because there are no test vectors or signal-in-space using ECDSA
   P-521. Currently the `galmon-osnma` application assumes that the key that is
   loaded is a P-256 key. The `p521` feature, which is enabled by default, is
-  used to active P-521 support. It is disabled in the `osnma-longan-nano` demo,
-  since otherwise the firmware size is too large.
+  used to enable P-521 support. It is disabled in the `osnma-longan-nano` demo,
+  since otherwise the firmware size is too large for the target microcontroller.
+* Verification of DSM-PKR against the Merkle tree root.
 * Verification of TESLA keys using the TESLA root key or another previously
   authenticated key in the chain.
 * Verification of the MACSEQ and ADKD fields of the MACK message using the MAC
@@ -109,20 +143,18 @@ Supported features:
 * Retrieval of DSM messages using OSNMA data.
 * Retrieval of MACK messages using OSNMA data.
 * Navigation data retrieval using INAV words.
-* Storage of the current TESLA key.
+* Storage of the current ECDSA public key and potentially the next ECDSA public
+  key, in order to support key renewal or revocation scenarios seamlessly.
+* Storage of the current TESLA key and potentially a TESLA key for the next
+  chain, in order to support chain renewal or revocation scenarios seamlessly.
 * Storage and classification of MACK messages and navigation data.
 * Tag accumulation. 80 bit worth of tags are required to consider a piece
   of navigation data as authenticated.
+* Non-nominal scenarios (renewals, revocations, alerts), according to the values
+  of the NMA status and CPKS fields in the NMA header.
 
 Unsupported features:
 
-* Public key renewal. The parsing of DSM-PKR messages and the authentication
-  using the Merkle tree is not implemented yet.
-* Change of TESLA chain scenarios. Currently it is assumed that there is only
-  one TESLA chain being used. The handling of the scenarios defined in Section
-  5.5 of the
-  [Galileo OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf)
-  is not implemented.
 * Warm start, by loading a previously authenticated TESLA key.
 
 Roadmap features. These are not features of OSNMA itself, but will add to the
