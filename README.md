@@ -114,6 +114,16 @@ The tree root is given as a 256-bit hexadecimal number in place of the `...`. Th
 `--merkle-root` argument. The tree root is also listed in other parts of the GSC Products
 website.
 
+The public key is also given as 264-bit compressed point in hexadecimal, both in
+an XML file containing the public key, and in the Merkle tree XML file, as well
+as in other parts of the GSC Products website. This format can be converted to
+PEM with the [ecdsa](https://pypi.org/project/ecdsa/) Python package as follows:
+```
+ECDSA_PUBKEY="..." python -c 'import ecdsa; import os; vk = ecdsa.VerifyingKey.from_string(bytes.fromhex(os.environ["ECDSA_PUBKEY"]), curve=ecdsa.NIST256p); print(str(vk.to_pem(), encoding="ascii"), end="")'
+```
+Here `...` should be replaced by the 264-bit hexadecimal representation of the
+public key.
+
 ## Development status
 
 galileo-osnma has been usable since its first release during the public test
