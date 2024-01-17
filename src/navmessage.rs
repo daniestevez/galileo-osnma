@@ -15,8 +15,10 @@ use bitvec::prelude::*;
 use generic_array::GenericArray;
 use typenum::Unsigned;
 
-// Minimum equivalent tag for authentication. Currently defined as 80 bits
-const MIN_AUTHBITS: u16 = 80;
+// Minimum equivalent tag for authentication. Initially defined as 80 bits.
+// Changed to 40 bits as of 2024-01-15:
+// https://www.gsc-europa.eu/news/updated-documentation-and-cryptographic-material-in-preparation-for-the-galileo-osnma-initial
+const MIN_AUTHBITS: u16 = 40;
 
 /// Navigation message store.
 ///
