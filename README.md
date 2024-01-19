@@ -97,11 +97,11 @@ It is necessary to register an account to obtain these files.
 
 The public key is downloaded as an x509 certificate. The Public Key ID is included
 in the filename, and it is also listed elsewhere in the GSC Products website.
-The current certificate file is `OSNMA_PublicKey_20231213105953_newPKID_2.crt`,
-and the corresponding Public Key ID is `2`. The key in PEM format, as required by
+The current certificate file is `OSNMA_PublicKey_20240115100000_newPKID_1.crt`,
+and the corresponding Public Key ID is `1`. The key in PEM format, as required by
 `galmon-osnma` can be extracted with
 ```
-openssl x509 -in OSNMA_PublicKey_20231213105953_newPKID_2.crt  -noout -pubkey > osnma-pubkey.pem
+openssl x509 -in OSNMA_PublicKey_20240115100000_newPKID_1.crt -noout -pubkey > osnma-pubkey.pem
 ```
 
 The Merkle tree information is downloaded in an XML file. Only the tree root is
