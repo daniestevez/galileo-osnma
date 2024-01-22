@@ -23,7 +23,7 @@ const MIN_AUTHBITS: u16 = 40;
 /// Navigation message store.
 ///
 /// This struct is used to store and classify the navigation message data, and
-/// to authenticate it using MACK tags and their corresponding TESLA keys.
+/// to authenticate it using MAC tags and their corresponding TESLA keys.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct CollectNavMessage<S: StaticStorage> {
     ced_and_status: GenericArray<CedAndStatus, S::NavMessageDepthSats>,
