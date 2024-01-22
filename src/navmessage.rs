@@ -60,8 +60,8 @@ impl<'a> NavMessageData<'a> {
 
     /// Returns the GST that corresponds to this navigation data.
     ///
-    /// The GST is defined as the starting GST of the subframe where this
-    /// navigation data was transmitted.
+    /// The GST is defined as the starting GST of the subframe where the most
+    /// recently received word in this set of navigation data was transmitted.
     pub fn gst(&self) -> Gst {
         self.gst
     }
@@ -230,10 +230,12 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 self.ced_and_status[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS].iter()
             {
                 if item.svn == Some(svn) && item.authbits >= MIN_AUTHBITS {
+                    let age: i32 = item.min_age().into();
+                    let gst = self.gsts[gst_idx].unwrap().add_subframes(-age);
                     return Some(NavMessageData {
                         data: item.message_bits(),
                         authbits: item.authbits,
-                        gst: self.gsts[gst_idx].unwrap(),
+                        gst,
                     });
                 }
             }
@@ -256,10 +258,12 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 self.timing_parameters[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS].iter()
             {
                 if item.svn == Some(svn) && item.authbits >= MIN_AUTHBITS {
+                    let age: i32 = item.min_age().into();
+                    let gst = self.gsts[gst_idx].unwrap().add_subframes(-age);
                     return Some(NavMessageData {
                         data: item.message_bits(),
                         authbits: item.authbits,
-                        gst: self.gsts[gst_idx].unwrap(),
+                        gst,
                     });
                 }
             }
@@ -633,6 +637,10 @@ macro_rules! impl_common {
 
             fn max_age(&self) -> u8 {
                 self.age.iter().copied().max().unwrap()
+            }
+
+            fn min_age(&self) -> u8 {
+                self.age.iter().copied().min().unwrap()
             }
 
             fn copy_word(

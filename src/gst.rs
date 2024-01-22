@@ -84,6 +84,26 @@ impl Gst {
         }
     }
 
+    /// Adds `subframes` 30-second subframes to the GST.
+    ///
+    /// The GST corresponding to the sum is returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use galileo_osnma::Gst;
+    ///
+    /// let gst = Gst::new(1177, 175767);
+    /// let gst2 = gst.add_subframes(3);
+    /// assert_eq!(gst2.wn(), 1177);
+    /// assert_eq!(gst2.tow(), 175857);
+    ///
+    /// assert_eq!(gst2.add_subframes(-3), gst);
+    /// ```
+    pub fn add_subframes(&self, subframes: i32) -> Self {
+        self.add_seconds(subframes * i32::try_from(SECS_PER_SUBFRAME).unwrap())
+    }
+
     /// Returns the GST at the start of the subframe that contains `self`.
     ///
     /// The GST returned has the same week number as `self` and its time
