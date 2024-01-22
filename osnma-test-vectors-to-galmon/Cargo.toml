@@ -1,0 +1,21 @@
+[package]
+name = "osnma-test-vectors-to-galmon"
+version = "0.1.0"
+edition = "2021"
+authors = ["Daniel Estevez <daniel@destevez.net>"]
+description = "Converts Galileo OSNMA test vectors to Galmon transport protocol"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/daniestevez/galileo-osnma/"
+repository = "https://github.com/daniestevez/galileo-osnma/"
+keywords = ["galileo", "gnss", "osnma", "authentication", "cryptography"]
+categories = ["aerospace::space-protocols", "authentication", "embedded", "no-std"]
+
+publish = false
+
+[dependencies]
+anyhow = "1"
+bitvec = "1"
+clap = { version = "4.4", features = ["derive"] }
+chrono = "0.4"
+galileo-osnma = { path = "..", features = ["galmon"] }
+hex = "0.4"
