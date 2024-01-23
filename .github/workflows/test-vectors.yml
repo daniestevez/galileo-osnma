@@ -1,0 +1,23 @@
+name: Test vectors
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test_vectors:
+    name: Test vectors
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install protoc
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
+    - name: Download test vectors
+      run: |
+        wget --quiet https://www.gsc-europa.eu/sites/default/files/sites/all/files/Annex_B_Test_Vectors.zip
+        unzip Annex_B_Test_Vectors.zip
+    - name: Run test vectors
+      run: RUST_LOG_STYLE=always ./utils/run_test_vectors.sh Test_vectors
