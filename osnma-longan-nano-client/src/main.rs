@@ -126,6 +126,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             };
 
+            // Drop INAV Dummy Messages
+            let inav_word_type = inav_word[0] >> 2;
+            if inav_word_type == 63 {
+                continue;
+            }
+
             serial.read_until_ready()?;
             serial.send_inav(inav_word[..].try_into().unwrap(), svn, gst, band)?;
             if let Some(osnma_data) = osnma_data {

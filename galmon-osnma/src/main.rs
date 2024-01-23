@@ -132,6 +132,24 @@ fn main() -> Result<()> {
                 }
             };
 
+            // The OSNMA SIS ICD says that OSNMA is not provided in INAV Dummy
+            // Messages or Alert Pages. The OSNMA field in these pages may not
+            // contain all zeros, but is invalid and should be discarded.
+            //
+            // Here we drop INAV words that are Dummy Messages. There is no way
+            // for us to filter for Alert Pages in Galmon data (the page type
+            // bit is not present), so hopefully these pages don't make it here.
+            let inav_word_type = inav_word[0] >> 2;
+            if inav_word_type == 63 {
+                log::debug!(
+                    "discarding dummy INAV word from {} {:?} at {:?}",
+                    svn,
+                    band,
+                    gst
+                );
+                continue;
+            }
+
             osnma.feed_inav(inav_word[..].try_into().unwrap(), svn, gst, band);
             if let Some(osnma_data) = osnma_data {
                 osnma.feed_osnma(osnma_data[..].try_into().unwrap(), svn, gst);
