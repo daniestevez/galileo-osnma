@@ -401,6 +401,7 @@ dependencies = [
  "hex",
  "log",
  "p256",
+ "p521",
  "spki",
 ]
 
@@ -600,6 +601,7 @@ dependencies = [
  "ecdsa",
  "elliptic-curve",
  "primeorder",
+ "rand_core",
  "sha2",
 ]
 

@@ -6,7 +6,6 @@ use galileo_osnma::{
     types::{BitSlice, NUM_SVNS},
     Gst, InavBand, Osnma, PublicKey, Svn, Validated, Wn,
 };
-use p256::ecdsa::VerifyingKey;
 use spki::DecodePublicKey;
 use std::io::Read;
 
@@ -17,9 +16,12 @@ struct Args {
     /// Merkle tree root in hex.
     #[arg(long)]
     merkle_root: Option<String>,
-    /// Path to the public key in PEM format.
+    /// Path to the P-256 public key in PEM format.
     #[arg(long)]
     pubkey: Option<String>,
+    /// P-521 public key in hexadecimal format (SEC1 encoding).
+    #[arg(long)]
+    pubkey_p521: Option<String>,
     /// ID of the public key.
     #[arg(long)]
     pkid: Option<u8>,
@@ -32,24 +34,46 @@ fn load_pubkey(path: &str, pkid: u8) -> Result<PublicKey<Validated>> {
     let mut file = std::fs::File::open(path)?;
     let mut pem = String::new();
     file.read_to_string(&mut pem)?;
-    let pubkey = VerifyingKey::from_public_key_pem(&pem)?;
+    let pubkey = p256::ecdsa::VerifyingKey::from_public_key_pem(&pem)?;
     Ok(PublicKey::from_p256(pubkey, pkid).force_valid())
+}
+
+fn load_pubkey_p521(hex: &str, pkid: u8) -> Result<PublicKey<Validated>> {
+    let pubkey = hex::decode(hex)?;
+    let pubkey = p521::ecdsa::VerifyingKey::from_sec1_bytes(&pubkey)?;
+    Ok(PublicKey::from_p521(pubkey, pkid).force_valid())
 }
 
 fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
 
-    if args.merkle_root.is_none() && args.pubkey.is_none() {
+    if args.merkle_root.is_none() && args.pubkey.is_none() && args.pubkey_p521.is_none() {
         anyhow::bail!("at least either the Merkle tree root or the public key must be specified");
     }
 
-    if args.pubkey.is_some() != args.pkid.is_some() {
+    if args.pubkey.is_some() && args.pubkey_p521.is_some() {
+        anyhow::bail!("the --pubkey and --pubkey-p521 arguments are mutually exclusive");
+    }
+
+    if args.pubkey.is_some() && args.pkid.is_none() {
         anyhow::bail!("the --pubkey and --pkid arguments need to be both specified together");
+    }
+
+    if args.pubkey_p521.is_some() && args.pkid.is_none() {
+        anyhow::bail!("the --pubkey-p521 and --pkid arguments need to be both specified together");
+    }
+
+    if args.pkid.is_some() && args.pubkey.is_none() && args.pubkey_p521.is_none() {
+        anyhow::bail!(
+            "the --pkid argument needs to be used together with --pubkey or --pubkey-p521"
+        );
     }
 
     let pubkey = if let Some(pubkey_path) = &args.pubkey {
         Some(load_pubkey(pubkey_path, args.pkid.unwrap())?)
+    } else if let Some(pubkey_hex) = &args.pubkey_p521 {
+        Some(load_pubkey_p521(pubkey_hex, args.pkid.unwrap())?)
     } else {
         None
     };

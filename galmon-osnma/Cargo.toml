@@ -22,4 +22,5 @@ galileo-osnma = { path = "..", features = ["galmon"] }
 hex = "0.4"
 log = "0.4"
 p256 = { version = "0.13", features = ["ecdsa"] }
+p521 = { version = "0.13", features = ["ecdsa"] }
 spki = { version = "0.7", features = ["pem"] }
