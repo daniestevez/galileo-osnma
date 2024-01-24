@@ -81,8 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut current_subframe = None;
     let mut last_tow_mod_30 = 0;
 
-    loop {
-        let packet = read_galmon.read_packet()?;
+    while let Some(packet) = read_galmon.read_packet()? {
         if let Some(
             inav @ GalileoInav {
                 contents: inav_word,
@@ -140,4 +139,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
+
+    Ok(())
 }

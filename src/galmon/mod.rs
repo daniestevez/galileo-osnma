@@ -22,7 +22,7 @@ pub mod transport {
     use super::navmon::NavMonMessage;
     use bytes::BytesMut;
     use prost::Message;
-    use std::io::{Read, Write};
+    use std::io::{ErrorKind, Read, Write};
 
     /// Reader for the Galmon transport protocol.
     ///
@@ -45,12 +45,19 @@ pub mod transport {
 
         /// Tries to read a navmon packet.
         ///
-        /// If the read is successful, a navmon packet is returned.
-        pub fn read_packet(&mut self) -> std::io::Result<NavMonMessage> {
+        /// If the read is successful, a navmon packet is returned. If EOF is reached
+        /// after a packet, `None` is returned. For any other kinds of errors, an `Err`
+        /// is returned.
+        pub fn read_packet(&mut self) -> std::io::Result<Option<NavMonMessage>> {
             // Read 4-byte magic value and 2-byte frame length
             if let Err(e) = self.read.read_exact(&mut self.buffer[..6]) {
-                log::error!("could not read packet header: {}", e);
-                return Err(e);
+                match e.kind() {
+                    ErrorKind::UnexpectedEof => return Ok(None),
+                    _ => {
+                        log::error!("could not read packet header: {}", e);
+                        return Err(e);
+                    }
+                }
             }
             if &self.buffer[..4] != b"bert" {
                 let err = "incorrect galmon magic value";
@@ -77,7 +84,7 @@ pub mod transport {
                     return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e));
                 }
             };
-            Ok(frame)
+            Ok(Some(frame))
         }
     }
 
@@ -171,7 +178,7 @@ pub mod transport {
             let mut total_size = 0;
             // There should be 17 packets in the test data
             for _ in 0..17 {
-                let packet = read.read_packet().unwrap();
+                let packet = read.read_packet().unwrap().unwrap();
                 total_size += write.write_packet(&packet).unwrap();
             }
             assert_eq!(&write.write, packets);
