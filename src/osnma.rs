@@ -1,5 +1,6 @@
 use crate::bitfields::{
-    ChainAndPubkeyStatus, DsmHeader, DsmKroot, DsmPkr, DsmType, Mack, NmaHeader, NmaStatus,
+    ChainAndPubkeyStatus, DsmHeader, DsmKroot, DsmPkr, DsmType, Mack, NewPublicKeyType, NmaHeader,
+    NmaStatus,
 };
 use crate::dsm::{CollectDsm, Dsm};
 use crate::mack::MackStorage;
@@ -335,12 +336,17 @@ impl<S: StaticStorage> OsnmaData<S> {
                 log::warn!("CPKS is new Merkle tree");
             }
             ChainAndPubkeyStatus::AlertMessage => {
-                log::warn!("CPKS is alert message; deleting all cryptographic material");
-                self.merkle_tree = None;
-                self.pubkey = PubkeyStore::empty();
-                self.key = KeyStore::empty();
+                log::warn!("CPKS is alert message");
+                self.alert_message_received();
             }
         }
+    }
+
+    fn alert_message_received(&mut self) {
+        log::warn!("received OSNMA Alert Message; deleting all cryptographic material");
+        self.merkle_tree = None;
+        self.pubkey = PubkeyStore::empty();
+        self.key = KeyStore::empty();
     }
 
     fn set_dont_use(&mut self) {
@@ -349,6 +355,16 @@ impl<S: StaticStorage> OsnmaData<S> {
     }
 
     fn process_dsm_pkr(&mut self, dsm_pkr: DsmPkr) {
+        match dsm_pkr.new_public_key_type() {
+            NewPublicKeyType::EcdsaKey(_) => self.process_dsm_pkr_npk(dsm_pkr),
+            NewPublicKeyType::OsnmaAlertMessage => self.process_dsm_pkr_alert_message(dsm_pkr),
+            NewPublicKeyType::Reserved => {
+                log::error!("reserved NPKT in DSM-PKR: {:?}", dsm_pkr);
+            }
+        }
+    }
+
+    fn process_dsm_pkr_npk(&mut self, dsm_pkr: DsmPkr) {
         let Some(merkle_tree) = &self.merkle_tree else {
             log::error!("could not verify public key because Merkle tree is not loaded");
             return;
@@ -359,6 +375,20 @@ impl<S: StaticStorage> OsnmaData<S> {
                 self.pubkey.store_new_pubkey(pubkey);
             }
             Err(e) => log::error!("could not verify public key: {e:?}"),
+        }
+    }
+
+    fn process_dsm_pkr_alert_message(&mut self, dsm_pkr: DsmPkr) {
+        let Some(merkle_tree) = &self.merkle_tree else {
+            log::error!("could not verify OSNMA Alert Message because Merkle tree is not loaded");
+            return;
+        };
+        match merkle_tree.validate_alert_message(dsm_pkr) {
+            Ok(()) => {
+                log::warn!("received valid OSNMA Alert Message in DSM-PKR: {dsm_pkr:?}");
+                self.alert_message_received();
+            }
+            Err(e) => log::error!("could not verify OSNMA Alert Message: {e:?}"),
         }
     }
 

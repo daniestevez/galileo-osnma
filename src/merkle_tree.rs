@@ -25,7 +25,7 @@ impl MerkleTree {
         MerkleTree { root }
     }
 
-    /// Validates a DSM-PKR against this Merkle tree.
+    /// Validates a DSM-PKR containing a public key against this Merkle tree.
     ///
     /// This function checks that the public key in the DSM-PKR message belongs
     /// to the Merkle tree by using the intermediate tree nodes in the DSM-PKR
@@ -41,6 +41,32 @@ impl MerkleTree {
         if !matches!(dsm_pkr.new_public_key_type(), NewPublicKeyType::EcdsaKey(_)) {
             return Err(PkrError::NoPublicKey);
         }
+        self.validate(dsm_pkr)?;
+        Self::pubkey_from_pkr(dsm_pkr)
+    }
+
+    /// Validates a DSM-PKR containing an Alert Message against this Merkle tree.
+    ///
+    /// This function checks that the public key in the DSM-PKR message belongs
+    /// to the Merkle tree by using the intermediate tree nodes in the DSM-PKR
+    /// and checking against the tree root stored in `self`.
+    ///
+    /// The validation algorithm is described in Section 6.2 of the
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
+    ///
+    /// If validation is successful, the function returns `Ok(())`. Otherwise,
+    /// an error is returned.
+    pub fn validate_alert_message(&self, dsm_pkr: DsmPkr) -> Result<(), PkrError> {
+        if !matches!(
+            dsm_pkr.new_public_key_type(),
+            NewPublicKeyType::OsnmaAlertMessage
+        ) {
+            return Err(PkrError::NoPublicKey);
+        }
+        self.validate(dsm_pkr)
+    }
+
+    fn validate(&self, dsm_pkr: DsmPkr) -> Result<(), PkrError> {
         let Some(leaf) = dsm_pkr.merkle_tree_leaf() else {
             return Err(PkrError::ReservedField);
         };
@@ -58,7 +84,7 @@ impl MerkleTree {
             id >>= 1;
         }
         if node == self.root {
-            Self::pubkey_from_pkr(dsm_pkr)
+            Ok(())
         } else {
             Err(PkrError::Invalid)
         }
@@ -117,6 +143,8 @@ pub enum PkrError {
     Invalid,
     /// The DSM-PKR does not contain a public key.
     NoPublicKey,
+    /// The DSM-PKR is not an Alert Message.
+    NotAlert,
     /// The DSM-PRK key is P-521, but P-521 support has not been enabled.
     #[cfg(not(feature = "p521"))]
     P521NotSupported,
@@ -128,6 +156,7 @@ impl fmt::Display for PkrError {
             PkrError::ReservedField => "reserved value present in some field".fmt(f),
             PkrError::Invalid => "wrong calculated Merkle tree root".fmt(f),
             PkrError::NoPublicKey => "no public key in DSM-PKR".fmt(f),
+            PkrError::NotAlert => "the DSM-PKR is not an alert message".fmt(f),
             #[cfg(not(feature = "p521"))]
             PkrError::P521NotSupported => "P-521 support disabled".fmt(f),
         }
