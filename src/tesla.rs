@@ -762,8 +762,8 @@ impl Key<Validated> {
     /// Tries to validate a tag and its corresponding navigation data.
     ///
     /// The algorithm in Section 6.7 of the
-    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
-    /// Is used to attempt to validate a tag and its corresponding navigation data.
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf)
+    /// is used to attempt to validate a tag and its corresponding navigation data.
     ///
     /// The `tag_gst` parameter should give the GST at the start of the subframe
     /// when the `tag` was transmitted. The `prnd` and `prna` parameters are
@@ -781,7 +781,6 @@ impl Key<Validated> {
     /// difference between the GSTs of the key and the tag should be 11
     /// subframes).
     ///
-    ///
     /// This returns `true` if the validation was succesful. Otherwise, it
     /// returns `false`.
     #[allow(clippy::too_many_arguments)]
@@ -797,15 +796,41 @@ impl Key<Validated> {
     ) -> bool {
         let mut mac = self.mac_digest();
         mac.update(&[prnd]);
-        self.update_common_tag_message(&mut mac, tag_gst, prna, ctr, nma_status, navdata);
+        Self::update_mac_with_navdata(&mut mac, tag_gst, prna, ctr, nma_status, navdata);
+        self.check_common(mac, tag)
+    }
+
+    /// Tries to validate a dummy tag.
+    ///
+    /// The algorithm in Section 6.7 of the
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf)
+    /// is used to attempt to validate a dummy tag.
+    ///
+    /// The length of the corresponding navigation data in bits is supplied in
+    /// the `navdata_len_bits` parameter. See [`Key::validate_tag`] for a
+    /// description of the remaining parameters and the return value.
+    #[allow(clippy::too_many_arguments)]
+    pub fn validate_tag_dummy(
+        &self,
+        tag: &BitSlice,
+        tag_gst: Gst,
+        prnd: u8,
+        prna: Svn,
+        ctr: u8,
+        nma_status: NmaStatus,
+        navdata_len_bits: usize,
+    ) -> bool {
+        let mut mac = self.mac_digest();
+        mac.update(&[prnd]);
+        Self::update_mac_with_dummy(&mut mac, tag_gst, prna, ctr, nma_status, navdata_len_bits);
         self.check_common(mac, tag)
     }
 
     /// Tries to validate a tag0 and its corresponding navigation data.
     ///
     /// The algorithm in Section 6.7 of the
-    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
-    /// Is used to attempt to validate a tag and its corresponding navigation data.
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf)
+    /// is used to attempt to validate a tag and its corresponding navigation data.
     ///
     /// The `tag_gst` parameter should give the GST at the start of the subframe
     /// when the `tag` was transmitted. The `prna` parameter corresponds to the
@@ -830,7 +855,29 @@ impl Key<Validated> {
         navdata: &BitSlice,
     ) -> bool {
         let mut mac = self.mac_digest();
-        self.update_common_tag_message(&mut mac, tag_gst, prna, 1, nma_status, navdata);
+        Self::update_mac_with_navdata(&mut mac, tag_gst, prna, 1, nma_status, navdata);
+        self.check_common(mac, tag0)
+    }
+
+    /// Tries to validate a dummy tag0.
+    ///
+    /// The algorithm in Section 6.7 of the
+    /// [OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf)
+    /// is used to attempt to validate a dummy tag.
+    ///
+    /// The length of the corresponding navigation data in bits is supplied in
+    /// the `navdata_len_bits` parameter. See [`Key::validate_tag`] for a
+    /// description of the remaining parameters and the return value.
+    pub fn validate_tag0_dummy(
+        &self,
+        tag0: &BitSlice,
+        tag_gst: Gst,
+        prna: Svn,
+        nma_status: NmaStatus,
+        navdata_len_bits: usize,
+    ) -> bool {
+        let mut mac = self.mac_digest();
+        Self::update_mac_with_dummy(&mut mac, tag_gst, prna, 1, nma_status, navdata_len_bits);
         self.check_common(mac, tag0)
     }
 
@@ -839,8 +886,43 @@ impl Key<Validated> {
         MacDigest::new_from_slice(self.chain.mac_function, key).unwrap()
     }
 
-    fn update_common_tag_message(
-        &self,
+    // This is large enough to fit all the message for ADKD=0 and 12
+    // (which have the largest navdata size, equal to 549 bits)
+    const MAX_NAVDATA_SIZE: usize = 69;
+    const TAG_FIXED_SIZE: usize = 6;
+    const TAG_BUFF_SIZE: usize = Self::TAG_FIXED_SIZE + Self::MAX_NAVDATA_SIZE;
+    const STATUS_BITS: usize = 2;
+
+    fn new_tag_buffer() -> [u8; Self::TAG_BUFF_SIZE] {
+        [0u8; Self::TAG_BUFF_SIZE]
+    }
+
+    fn fill_buffer_header(
+        buffer: &mut [u8; Self::TAG_BUFF_SIZE],
+        gst: Gst,
+        prna: Svn,
+        ctr: u8,
+        nma_status: NmaStatus,
+    ) {
+        buffer[0] = u8::from(prna);
+        Self::store_gst(&mut buffer[1..5], gst);
+        buffer[5] = ctr;
+        let remaining_bits = BitSlice::from_slice_mut(&mut buffer[6..]);
+        remaining_bits[..Self::STATUS_BITS].store_be(match nma_status {
+            NmaStatus::Reserved => 0,
+            NmaStatus::Test => 1,
+            NmaStatus::Operational => 2,
+            NmaStatus::DontUse => 3,
+        });
+    }
+
+    fn fill_buffer_navdata(buffer: &mut [u8; Self::TAG_BUFF_SIZE], navdata: &BitSlice) {
+        let remaining_bits = BitSlice::from_slice_mut(&mut buffer[6..]);
+        remaining_bits[Self::STATUS_BITS..Self::STATUS_BITS + navdata.len()]
+            .copy_from_bitslice(navdata);
+    }
+
+    fn update_mac_with_navdata(
         mac: &mut MacDigest,
         gst: Gst,
         prna: Svn,
@@ -848,25 +930,24 @@ impl Key<Validated> {
         nma_status: NmaStatus,
         navdata: &BitSlice,
     ) {
-        // This is large enough to fit all the message for ADKD=0 and 12
-        // (which have the largest navdata size, equal to 549 bits)
-        const MAX_NAVDATA_SIZE: usize = 69;
-        const FIXED_SIZE: usize = 6;
-        const BUFF_SIZE: usize = FIXED_SIZE + MAX_NAVDATA_SIZE;
-        let mut buffer = [0u8; BUFF_SIZE];
-        buffer[0] = u8::from(prna);
-        Self::store_gst(&mut buffer[1..5], gst);
-        buffer[5] = ctr;
-        let remaining_bits = BitSlice::from_slice_mut(&mut buffer[6..]);
-        const STATUS_BITS: usize = 2;
-        remaining_bits[..STATUS_BITS].store_be(match nma_status {
-            NmaStatus::Reserved => 0,
-            NmaStatus::Test => 1,
-            NmaStatus::Operational => 2,
-            NmaStatus::DontUse => 3,
-        });
-        remaining_bits[STATUS_BITS..STATUS_BITS + navdata.len()].copy_from_bitslice(navdata);
-        let message_bytes = FIXED_SIZE + (STATUS_BITS + navdata.len() + 7) / 8;
+        let mut buffer = Self::new_tag_buffer();
+        Self::fill_buffer_header(&mut buffer, gst, prna, ctr, nma_status);
+        Self::fill_buffer_navdata(&mut buffer, navdata);
+        let message_bytes = Self::TAG_FIXED_SIZE + (Self::STATUS_BITS + navdata.len() + 7) / 8;
+        mac.update(&buffer[..message_bytes]);
+    }
+
+    fn update_mac_with_dummy(
+        mac: &mut MacDigest,
+        gst: Gst,
+        prna: Svn,
+        ctr: u8,
+        nma_status: NmaStatus,
+        navdata_len_bits: usize,
+    ) {
+        let mut buffer = Self::new_tag_buffer();
+        Self::fill_buffer_header(&mut buffer, gst, prna, ctr, nma_status);
+        let message_bytes = Self::TAG_FIXED_SIZE + (Self::STATUS_BITS + navdata_len_bits + 7) / 8;
         mac.update(&buffer[..message_bytes]);
     }
 

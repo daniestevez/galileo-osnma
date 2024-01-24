@@ -334,7 +334,17 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         log::info!("{} tag0 at {:?} COP = {}", prna, gst_mack, mack.cop());
         let gst_navmessage = gst_mack.add_seconds(-30);
         if mack.cop() == 0 {
-            log::warn!("COP = 0 validation not implemented");
+            Self::validate_dummy_tag(
+                key,
+                mack.tag0(),
+                Adkd::InavCed,
+                gst_mack,
+                u8::from(prna),
+                prna,
+                0,
+                nma_status,
+                CED_AND_STATUS_BITS,
+            );
         } else if let Some(&navdata) = self.find_ced_and_status(prna, gst_navmessage) {
             if navdata.max_age().saturating_add(1) <= mack.cop() {
                 // Try to validate tag0
@@ -365,10 +375,6 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 tag.cop(),
                 tag.prnd()
             );
-            if tag.cop() == 0 {
-                log::warn!("COP = 0 validation not implemented");
-                continue;
-            }
             let prnd = match u8::try_from(tag.prnd()) {
                 Ok(p) => p,
                 Err(_) => {
@@ -379,7 +385,21 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             match tag.adkd() {
                 Adkd::InavCed => match Svn::try_from(prnd) {
                     Ok(prnd_svn) => {
-                        if let Some(&navdata) = self.find_ced_and_status(prnd_svn, gst_navmessage) {
+                        if tag.cop() == 0 {
+                            Self::validate_dummy_tag(
+                                key,
+                                tag.tag(),
+                                tag.adkd(),
+                                gst_mack,
+                                prnd,
+                                prna,
+                                j,
+                                nma_status,
+                                CED_AND_STATUS_BITS,
+                            );
+                        } else if let Some(&navdata) =
+                            self.find_ced_and_status(prnd_svn, gst_navmessage)
+                        {
                             if navdata.max_age().saturating_add(1) <= tag.cop() {
                                 Self::validate_tag(
                                     key,
@@ -402,7 +422,19 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 },
                 Adkd::InavTiming => match Svn::try_from(prnd) {
                     Ok(prnd_svn) => {
-                        if let Some(&navdata) =
+                        if tag.cop() == 0 {
+                            Self::validate_dummy_tag(
+                                key,
+                                tag.tag(),
+                                tag.adkd(),
+                                gst_mack,
+                                prnd,
+                                prna,
+                                j,
+                                nma_status,
+                                TIMING_PARAMETERS_BITS,
+                            );
+                        } else if let Some(&navdata) =
                             self.find_timing_parameters(prnd_svn, gst_navmessage)
                         {
                             if navdata.max_age().saturating_add(1) <= tag.cop() {
@@ -466,9 +498,6 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             if tag.adkd() != Adkd::SlowMac {
                 continue;
             }
-            if tag.cop() == 0 {
-                log::warn!("COP = 0 validation not implemented");
-            }
             let prnd = match u8::try_from(tag.prnd()) {
                 Ok(p) => p,
                 Err(_) => {
@@ -483,7 +512,19 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                     continue;
                 }
             };
-            if let Some(&navdata) = self.find_ced_and_status(prnd_svn, gst_navmessage) {
+            if tag.cop() == 0 {
+                Self::validate_dummy_tag(
+                    key,
+                    tag.tag(),
+                    tag.adkd(),
+                    gst_mack,
+                    prnd,
+                    prna,
+                    j,
+                    nma_status,
+                    CED_AND_STATUS_BITS,
+                );
+            } else if let Some(&navdata) = self.find_ced_and_status(prnd_svn, gst_navmessage) {
                 if navdata.max_age().saturating_add(1) <= tag.cop() {
                     Self::validate_tag(
                         key,
@@ -556,6 +597,47 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         ret
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn validate_dummy_tag(
+        key: &Key<Validated>,
+        tag: &BitSlice,
+        adkd: Adkd,
+        gst_tag: Gst,
+        prnd: u8,
+        prna: Svn,
+        tag_idx: usize,
+        nma_status: NmaStatus,
+        navdata_len_bits: usize,
+    ) -> bool {
+        let ctr = (tag_idx + 1).try_into().unwrap();
+        let ret = match tag_idx {
+            0 => key.validate_tag0_dummy(tag, gst_tag, prna, nma_status, navdata_len_bits),
+            _ => {
+                key.validate_tag_dummy(tag, gst_tag, prnd, prna, ctr, nma_status, navdata_len_bits)
+            }
+        };
+        if ret {
+            log::info!(
+                "E{:02} {:?} at {:?} dummy tag{} correct (auth by {})",
+                prnd,
+                adkd,
+                gst_tag,
+                tag_idx,
+                prna
+            );
+        } else {
+            log::error!(
+                "E{:02} {:?} at {:?} dummy tag{} wrong (auth by {})",
+                prnd,
+                adkd,
+                gst_tag,
+                tag_idx,
+                prna
+            );
+        }
+        ret
+    }
+
     /// Resets all the authentication bits to zero.
     ///
     /// This function can be called when the NMA status is set to don't use in
@@ -576,8 +658,9 @@ impl<S: StaticStorage> Default for CollectNavMessage<S> {
     }
 }
 
-const CED_AND_STATUS_BYTES: usize = 69;
 const CED_AND_STATUS_WORDS: usize = 5;
+const CED_AND_STATUS_BITS: usize = 549;
+const CED_AND_STATUS_BYTES: usize = (CED_AND_STATUS_BITS + 7) / 8;
 
 #[doc(hidden)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -589,8 +672,9 @@ pub struct CedAndStatus {
     authbits: u16,
 }
 
-const TIMING_PARAMETERS_BYTES: usize = 18;
 const TIMING_PARAMETERS_WORDS: usize = 2;
+const TIMING_PARAMETERS_BITS: usize = 141;
+const TIMING_PARAMETERS_BYTES: usize = (TIMING_PARAMETERS_BITS + 7) / 8;
 
 #[doc(hidden)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -704,13 +788,13 @@ impl_common!(
     CedAndStatus,
     CED_AND_STATUS_BYTES,
     CED_AND_STATUS_WORDS,
-    549
+    CED_AND_STATUS_BITS
 );
 impl_common!(
     TimingParameters,
     TIMING_PARAMETERS_BYTES,
     TIMING_PARAMETERS_WORDS,
-    141
+    TIMING_PARAMETERS_BITS
 );
 
 impl CedAndStatus {
