@@ -25,6 +25,8 @@ CONVERT=$GALILEO_OSNMA_DIR/osnma-test-vectors-to-galmon/target/release/osnma-tes
 GALMON_OSNMA=$GALILEO_OSNMA_DIR/galmon-osnma/target/release/galmon-osnma
 GET_MERKLE=$GALILEO_OSNMA_DIR/utils/extract_merkle_tree_root.py
 GET_PUBKEY=$GALILEO_OSNMA_DIR/utils/extract_public_key.py
+GET_PUBKEY_FROM_MERKLE=$GALILEO_OSNMA_DIR/utils/extract_merkle_tree_key.py
+SEC1_TO_PEM=$GALILEO_OSNMA_DIR/utils/sec1_to_pem.py
 
 PUBKEY=/tmp/pubkey.pem
 
@@ -194,9 +196,12 @@ $CONVERT "${TEST_VECTOR_DIR}/osnma_test_vectors/nmt_step3/07_OCT_2023_GST_14_45_
 
 echo "Test vector: New Merkle Tree (step 2 only, starting with Merkle tree 3 and PKID 1)"
 
-openssl x509 \
-        -in "${TEST_VECTOR_DIR}/cryptographic_material/Merkle_tree_3/PublicKey/OSNMA_PublicKey_20231008111500_PKID_1.crt" \
-        -noout -pubkey > $PUBKEY
+# The PublicKey files for Merkle_tree_3 are wrong (they don't match the public key in the
+# Merkle tree XML file, nor the pubkey used in the OSNMA test vectors).
+#
+# We load the pubkey from the Merkle tree instead
+
+$SEC1_TO_PEM $($GET_PUBKEY_FROM_MERKLE ${TEST_VECTOR_DIR}/cryptographic_material/Merkle_tree_3/MerkleTree/OSNMA_MerkleTree_20231007201500_PKID_1.xml) > $PUBKEY
 PKID=1
 MERKLE="$($GET_MERKLE ${TEST_VECTOR_DIR}/cryptographic_material/Merkle_tree_3/MerkleTree/OSNMA_MerkleTree_20231007201500_PKID_1.xml)"
 
