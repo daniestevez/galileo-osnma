@@ -240,9 +240,14 @@ impl<S: StaticStorage> Osnma<S> {
 
 impl<S: StaticStorage> OsnmaDsm<S> {
     fn process_subframe(&mut self, hkroot: &HkrootMessage, mack: &MackMessage, svn: Svn, gst: Gst) {
-        self.data.mack.store(mack, svn, gst);
-
         let nma_header = NmaHeader::new(hkroot[0]);
+        // Note that the NMA status obtained below is retrieved from a NMA
+        // header which is not validated. However, this NMA status is only
+        // stored and eventually used for tag validation.
+        self.data
+            .mack
+            .store(mack, svn, gst, nma_header.nma_status());
+
         let dsm_header = &hkroot[1..2].try_into().unwrap();
         let dsm_header = DsmHeader(dsm_header);
         let dsm_block = &hkroot[2..].try_into().unwrap();
@@ -250,7 +255,7 @@ impl<S: StaticStorage> OsnmaDsm<S> {
             self.data.process_dsm(dsm, nma_header, gst);
         }
 
-        self.data.validate_key(mack, gst, nma_header.nma_status());
+        self.data.validate_key(mack, gst);
     }
 }
 
@@ -407,7 +412,7 @@ impl<S: StaticStorage> OsnmaData<S> {
         }
     }
 
-    fn validate_key(&mut self, mack: &MackMessage, gst: Gst, nma_status: NmaStatus) {
+    fn validate_key(&mut self, mack: &MackMessage, gst: Gst) {
         let Some(current_key) = self.key.current_key() else {
             log::info!("no valid TESLA key for the chain in force. unable to validate MACK key");
             return;
@@ -440,7 +445,7 @@ impl<S: StaticStorage> OsnmaData<S> {
                             current_key
                         );
                         self.key.store_key(new_valid_key);
-                        self.process_tags(&new_valid_key, nma_status);
+                        self.process_tags(&new_valid_key);
                     }
                     Err(e) => log::error!(
                         "could not validate TESLA key {:?} using {:?}: {:?}",
@@ -453,7 +458,7 @@ impl<S: StaticStorage> OsnmaData<S> {
         }
     }
 
-    fn process_tags(&mut self, current_key: &Key<Validated>, nma_status: NmaStatus) {
+    fn process_tags(&mut self, current_key: &Key<Validated>) {
         if self.dont_use {
             return;
         }
@@ -474,7 +479,7 @@ impl<S: StaticStorage> OsnmaData<S> {
         });
         for svn in Svn::iter() {
             if !self.only_slowmac {
-                if let Some(mack) = self.mack.get(svn, gst_mack) {
+                if let Some((mack, nma_status)) = self.mack.get(svn, gst_mack) {
                     let mack = Mack::new(
                         mack,
                         current_key.chain().key_size_bits(),
@@ -491,7 +496,7 @@ impl<S: StaticStorage> OsnmaData<S> {
             // This needs fetching a tag which is 300 seconds older than for
             // the other ADKDs
             if let Some(slowmac_key) = &slowmac_key {
-                if let Some(mack) = self.mack.get(svn, gst_slowmac) {
+                if let Some((mack, nma_status)) = self.mack.get(svn, gst_slowmac) {
                     let mack = Mack::new(
                         mack,
                         current_key.chain().key_size_bits(),

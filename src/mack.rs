@@ -3,6 +3,7 @@
 //! This module contains [`MackStorage`], which is used to classify and store
 //! MACK messages until their corresponding TESLA keys are received.
 
+use crate::bitfields::NmaStatus;
 use crate::gst::Gst;
 use crate::storage::StaticStorage;
 use crate::types::MackMessage;
@@ -29,6 +30,7 @@ pub struct MackStorage<S: StaticStorage> {
 pub struct Mack {
     message: MackMessage,
     svn: Svn,
+    nma_status: NmaStatus,
 }
 
 impl<S: StaticStorage> MackStorage<S> {
@@ -52,7 +54,10 @@ impl<S: StaticStorage> MackStorage<S> {
     ///
     /// The `gst` parameter gives the GST at the start of the subframe when the
     /// MACK message was transmitted.
-    pub fn store(&mut self, mack: &MackMessage, svn: Svn, gst: Gst) {
+    ///
+    /// The `nma_status` gives the NMA Status in the subframe where the MACK
+    /// message was transmitted.
+    pub fn store(&mut self, mack: &MackMessage, svn: Svn, gst: Gst, nma_status: NmaStatus) {
         self.adjust_write_pointer(gst);
         for location in self.current_macks_as_mut().iter_mut() {
             if location.is_none() {
@@ -60,6 +65,7 @@ impl<S: StaticStorage> MackStorage<S> {
                 *location = Some(Mack {
                     message: *mack,
                     svn,
+                    nma_status,
                 });
                 return;
             }
@@ -97,9 +103,9 @@ impl<S: StaticStorage> MackStorage<S> {
 
     /// Try to retrieve a MACK message.
     ///
-    /// This will return a the MACK message for a particular SVN and timestamp if
-    /// it is available in the storage. If the MACK message is not available, this
-    /// returns `None`.
+    /// This will return a the MACK message and its corresponding NMA Status for
+    /// a particular SVN and timestamp if it is available in the storage. If the
+    /// MACK message is not available, this returns `None`.
     ///
     /// The `svn` parameter corresponds to the SVN of the satellite transmitting
     /// the MACK message. This should be obtained from the PRN used for
@@ -107,7 +113,7 @@ impl<S: StaticStorage> MackStorage<S> {
     ///
     /// The `gst` parameter refers to the GST at the start of the subframe when the
     /// MACK message was transmitted.
-    pub fn get(&self, svn: Svn, gst: Gst) -> Option<&MackMessage> {
+    pub fn get(&self, svn: Svn, gst: Gst) -> Option<(&MackMessage, NmaStatus)> {
         let gst_idx =
             self.gsts
                 .iter()
@@ -116,7 +122,11 @@ impl<S: StaticStorage> MackStorage<S> {
         self.macks[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS]
             .iter()
             .find_map(|x| match x {
-                Some(Mack { svn: s, message }) if *s == svn => Some(message),
+                Some(Mack {
+                    svn: s,
+                    message,
+                    nma_status,
+                }) if *s == svn => Some((message, *nma_status)),
                 _ => None,
             })
     }
