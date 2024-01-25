@@ -142,4 +142,15 @@ impl Gst {
     pub fn is_subframe(&self) -> bool {
         self.tow % SECS_PER_SUBFRAME == 0
     }
+
+    /// Returns the difference in subframes between `other` and `self`.
+    ///
+    /// The returned value is equal to the number of GST seconds elapsed between
+    /// `self` and `other`, divided by 30.
+    pub fn subframes_difference(&self, other: Gst) -> i32 {
+        (i32::from(self.wn) - i32::from(other.wn))
+            * i32::try_from(SECS_IN_WEEK / SECS_PER_SUBFRAME).unwrap()
+            + (i32::try_from(self.tow).unwrap() - i32::try_from(other.tow).unwrap())
+                / i32::try_from(SECS_PER_SUBFRAME).unwrap()
+    }
 }

@@ -108,7 +108,17 @@ struct PubkeyStore {
 #[derive(Debug, Clone)]
 struct KeyStore {
     keys: [Option<Key<Validated>>; 2],
-    in_force: Option<bool>,
+    in_force: Option<KeyInForce>,
+}
+
+#[derive(Debug, Clone)]
+struct KeyInForce {
+    index: bool, // false for the 1st position, true for then 2nd position
+
+    // This is None if we haven't seen the key entering through a chain renewal
+    // or revocation, in which case we don't know when the key starts being
+    // applicable (and don't care, since we don't have the previous key).
+    start_applicability: Option<Gst>,
 }
 
 impl<S: StaticStorage> Osnma<S> {
@@ -237,7 +247,7 @@ impl<S: StaticStorage> OsnmaDsm<S> {
         let dsm_header = DsmHeader(dsm_header);
         let dsm_block = &hkroot[2..].try_into().unwrap();
         if let Some(dsm) = self.dsm.feed(dsm_header, dsm_block) {
-            self.data.process_dsm(dsm, nma_header);
+            self.data.process_dsm(dsm, nma_header, gst);
         }
 
         self.data.validate_key(mack, gst, nma_header.nma_status());
@@ -245,14 +255,19 @@ impl<S: StaticStorage> OsnmaDsm<S> {
 }
 
 impl<S: StaticStorage> OsnmaData<S> {
-    fn process_dsm(&mut self, dsm: Dsm, nma_header: NmaHeader<NotValidated>) {
+    fn process_dsm(&mut self, dsm: Dsm, nma_header: NmaHeader<NotValidated>, gst: Gst) {
         match dsm.dsm_type() {
-            DsmType::Kroot => self.process_dsm_kroot(DsmKroot(dsm.data()), nma_header),
+            DsmType::Kroot => self.process_dsm_kroot(DsmKroot(dsm.data()), nma_header, gst),
             DsmType::Pkr => self.process_dsm_pkr(DsmPkr(dsm.data())),
         }
     }
 
-    fn process_dsm_kroot(&mut self, dsm_kroot: DsmKroot, nma_header: NmaHeader<NotValidated>) {
+    fn process_dsm_kroot(
+        &mut self,
+        dsm_kroot: DsmKroot,
+        nma_header: NmaHeader<NotValidated>,
+        gst: Gst,
+    ) {
         let pkid = dsm_kroot.public_key_id();
         let Some(pubkey) = self.pubkey.applicable_pubkey(pkid) else {
             return;
@@ -262,7 +277,7 @@ impl<S: StaticStorage> OsnmaData<S> {
                 log::info!("verified KROOT with public key id {pkid}");
                 log::info!("current NMA header: {nma_header:?}");
                 self.pubkey.make_pkid_current(pkid);
-                self.key.store_kroot(key, nma_header);
+                self.key.store_kroot(key, nma_header, gst);
                 self.process_nma_header(nma_header, pkid);
             }
             Err(e) => log::error!("could not verify KROOT: {:?}", e),
@@ -424,8 +439,8 @@ impl<S: StaticStorage> OsnmaData<S> {
                             new_valid_key,
                             current_key
                         );
-                        self.process_tags(&new_valid_key, nma_status);
                         self.key.store_key(new_valid_key);
+                        self.process_tags(&new_valid_key, nma_status);
                     }
                     Err(e) => log::error!(
                         "could not validate TESLA key {:?} using {:?}: {:?}",
@@ -445,9 +460,18 @@ impl<S: StaticStorage> OsnmaData<S> {
 
         let gst_mack = current_key.gst_subframe().add_seconds(-30);
         let gst_slowmac = gst_mack.add_seconds(-300);
-        // Re-generate the key that was used for the MACSEQ of the
-        // Slow MAC MACK
-        let slowmac_key = current_key.derive(10);
+        // Try to re-generate the key that was used for the MACSEQ of the
+        // Slow MAC MACK. This key might be from a previous chain.
+        let gst_k_slowmac = current_key.gst_subframe().add_seconds(-300);
+        let slowmac_chain_key = self.key.key_past_chain(gst_k_slowmac);
+        let slowmac_key = slowmac_chain_key.and_then(|k| {
+            let derivations = k.gst_subframe().subframes_difference(gst_k_slowmac);
+            if derivations >= 0 {
+                Some(k.derive(derivations.try_into().unwrap()))
+            } else {
+                None
+            }
+        });
         for svn in Svn::iter() {
             if !self.only_slowmac {
                 if let Some(mack) = self.mack.get(svn, gst_mack) {
@@ -466,22 +490,24 @@ impl<S: StaticStorage> OsnmaData<S> {
             // Try to validate Slow MAC
             // This needs fetching a tag which is 300 seconds older than for
             // the other ADKDs
-            if let Some(mack) = self.mack.get(svn, gst_slowmac) {
-                let mack = Mack::new(
-                    mack,
-                    current_key.chain().key_size_bits(),
-                    current_key.chain().tag_size_bits(),
-                );
-                // Note that slowmac_key is used for validation of the MACK, while
-                // current_key is used for validation of the Slow MAC tags it contains.
-                if let Some(mack) = Self::validate_mack(mack, &slowmac_key, svn, gst_slowmac) {
-                    self.navmessage.process_mack_slowmac(
+            if let Some(slowmac_key) = &slowmac_key {
+                if let Some(mack) = self.mack.get(svn, gst_slowmac) {
+                    let mack = Mack::new(
                         mack,
-                        current_key,
-                        svn,
-                        gst_slowmac,
-                        nma_status,
+                        current_key.chain().key_size_bits(),
+                        current_key.chain().tag_size_bits(),
                     );
+                    // Note that slowmac_key is used for validation of the MACK, while
+                    // current_key is used for validation of the Slow MAC tags it contains.
+                    if let Some(mack) = Self::validate_mack(mack, slowmac_key, svn, gst_slowmac) {
+                        self.navmessage.process_mack_slowmac(
+                            mack,
+                            current_key,
+                            svn,
+                            gst_slowmac,
+                            nma_status,
+                        );
+                    }
                 }
             }
         }
@@ -495,7 +521,13 @@ impl<S: StaticStorage> OsnmaData<S> {
     ) -> Option<Mack<'a, Validated>> {
         match mack.validate(key, prna, gst_mack) {
             Err(e) => {
-                log::error!("error validating MACK {:?}: {:?}", mack, e);
+                log::error!(
+                    "error validating {} {:?} MACK {:?}: {:?}",
+                    prna,
+                    gst_mack,
+                    mack,
+                    e
+                );
                 None
             }
             Ok(m) => Some(m),
@@ -631,7 +663,7 @@ impl KeyStore {
         }
     }
 
-    fn store_kroot(&mut self, key: Key<Validated>, nma_header: NmaHeader<Validated>) {
+    fn store_kroot(&mut self, key: Key<Validated>, nma_header: NmaHeader<Validated>, gst: Gst) {
         let kid = key.chain().chain_id();
         let cid = nma_header.chain_id();
         match (&self.keys[0], &self.keys[1]) {
@@ -664,8 +696,28 @@ impl KeyStore {
         }
         // update self.in_force
         match (&self.keys[0], &self.keys[1]) {
-            (Some(k), _) if k.chain().chain_id() == cid => self.in_force = Some(false),
-            (_, Some(k)) if k.chain().chain_id() == cid => self.in_force = Some(true),
+            (Some(k), _) if k.chain().chain_id() == cid => {
+                let index = false;
+                let start_applicability = match &self.in_force {
+                    Some(in_force) if in_force.index != index => Some(gst),
+                    _ => None,
+                };
+                self.in_force = Some(KeyInForce {
+                    index,
+                    start_applicability,
+                });
+            }
+            (_, Some(k)) if k.chain().chain_id() == cid => {
+                let index = true;
+                let start_applicability = match &self.in_force {
+                    Some(in_force) if in_force.index != index => Some(gst),
+                    _ => None,
+                };
+                self.in_force = Some(KeyInForce {
+                    index,
+                    start_applicability,
+                });
+            }
             _ => self.in_force = None,
         }
     }
@@ -686,7 +738,24 @@ impl KeyStore {
 
     fn current_key(&self) -> Option<&Key<Validated>> {
         self.in_force
-            .and_then(|v| self.keys[usize::from(v)].as_ref())
+            .as_ref()
+            .and_then(|in_force| self.keys[usize::from(in_force.index)].as_ref())
+    }
+
+    // Similar to current_key but returns a key from the other chain if the
+    // requested GST is before the start of applicability of the current
+    // chain. This is used to get the key for MACK validation for Slow MAC.
+    fn key_past_chain(&self, gst: Gst) -> Option<&Key<Validated>> {
+        self.in_force
+            .as_ref()
+            .and_then(|in_force| match in_force.start_applicability {
+                Some(gst0) if gst0 > gst => {
+                    // Requested time is before the start of the applicability.
+                    // Get the key from the other slot (if occupied).
+                    self.keys[usize::from(!in_force.index)].as_ref()
+                }
+                _ => self.keys[usize::from(in_force.index)].as_ref(),
+            })
     }
 
     fn revoke(&mut self, cid: u8) {

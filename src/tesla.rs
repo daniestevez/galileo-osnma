@@ -738,11 +738,7 @@ impl Key<Validated> {
         if self.gst_subframe >= other.gst_subframe {
             return Err(ValidationError::DoesNotFollow);
         }
-        let derivations = i32::from(other.gst_subframe.wn() - self.gst_subframe.wn())
-            * (7 * 24 * 3600 / 30)
-            + (i32::try_from(other.gst_subframe.tow()).unwrap()
-                - i32::try_from(self.gst_subframe.tow()).unwrap())
-                / 30;
+        let derivations = other.gst_subframe.subframes_difference(self.gst_subframe);
         assert!(derivations >= 1);
         // Set an arbitrary limit to the number of derivations.
         // This is chosen to be slightly greater than 1 day.
