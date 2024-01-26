@@ -108,16 +108,14 @@ struct PubkeyStore {
 #[derive(Debug, Clone)]
 struct KeyStore {
     keys: [Option<Key<Validated>>; 2],
-    in_force: Option<KeyInForce>,
+    chain_in_force: Option<ChainInForce>,
 }
 
 #[derive(Debug, Clone)]
-struct KeyInForce {
-    index: bool, // false for the 1st position, true for then 2nd position
-
-    // This is None if we haven't seen the key entering through a chain renewal
-    // or revocation, in which case we don't know when the key starts being
-    // applicable (and don't care, since we don't have the previous key).
+struct ChainInForce {
+    cid: u8,
+    // This is None if the current CID has never replaced a previous different
+    // CID. Otherwise, it is set to the Gst in which the replacement happened.
     start_applicability: Option<Gst>,
 }
 
@@ -664,7 +662,7 @@ impl KeyStore {
     fn empty() -> KeyStore {
         KeyStore {
             keys: [None; 2],
-            in_force: None,
+            chain_in_force: None,
         }
     }
 
@@ -699,32 +697,17 @@ impl KeyStore {
                 }
             }
         }
-        // update self.in_force
-        match (&self.keys[0], &self.keys[1]) {
-            (Some(k), _) if k.chain().chain_id() == cid => {
-                let index = false;
-                let start_applicability = match &self.in_force {
-                    Some(in_force) if in_force.index != index => Some(gst),
-                    _ => None,
-                };
-                self.in_force = Some(KeyInForce {
-                    index,
-                    start_applicability,
-                });
-            }
-            (_, Some(k)) if k.chain().chain_id() == cid => {
-                let index = true;
-                let start_applicability = match &self.in_force {
-                    Some(in_force) if in_force.index != index => Some(gst),
-                    _ => None,
-                };
-                self.in_force = Some(KeyInForce {
-                    index,
-                    start_applicability,
-                });
-            }
-            _ => self.in_force = None,
-        }
+        // update chain in force
+        self.chain_in_force = Some(ChainInForce {
+            cid,
+            start_applicability: self.chain_in_force.as_ref().and_then(|cif| {
+                if cif.cid != cid {
+                    Some(gst)
+                } else {
+                    None
+                }
+            }),
+        });
     }
 
     fn store_key(&mut self, key: Key<Validated>) {
@@ -742,24 +725,30 @@ impl KeyStore {
     }
 
     fn current_key(&self) -> Option<&Key<Validated>> {
-        self.in_force
-            .as_ref()
-            .and_then(|in_force| self.keys[usize::from(in_force.index)].as_ref())
+        self.chain_in_force.as_ref().and_then(|cif| {
+            self.keys
+                .iter()
+                .flatten()
+                .find(|&&k| k.chain().chain_id() == cif.cid)
+        })
     }
 
     // Similar to current_key but returns a key from the other chain if the
     // requested GST is before the start of applicability of the current
     // chain. This is used to get the key for MACK validation for Slow MAC.
     fn key_past_chain(&self, gst: Gst) -> Option<&Key<Validated>> {
-        self.in_force
+        self.chain_in_force
             .as_ref()
-            .and_then(|in_force| match in_force.start_applicability {
+            .and_then(|cif| match cif.start_applicability {
                 Some(gst0) if gst0 > gst => {
                     // Requested time is before the start of the applicability.
                     // Get the key from the other slot (if occupied).
-                    self.keys[usize::from(!in_force.index)].as_ref()
+                    self.keys
+                        .iter()
+                        .flatten()
+                        .find(|&&k| k.chain().chain_id() != cif.cid)
                 }
-                _ => self.keys[usize::from(in_force.index)].as_ref(),
+                _ => self.current_key(),
             })
     }
 
