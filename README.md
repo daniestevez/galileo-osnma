@@ -1,10 +1,16 @@
 # galileo-osnma
 
 [![Crates.io][crates-badge]][crates-url]
+[![Docs][docs-badge]][docs-url]
 [![Rust](https://github.com/daniestevez/galileo-osnma/actions/workflows/rust.yml/badge.svg)](https://github.com/daniestevez/galileo-osnma/actions/workflows/rust.yml)
+[![OSNMA Test Vectors](https://github.com/daniestevez/galileo-osnma/actions/workflows/test-vectors.yml/badge.svg)](https://github.com/daniestevez/galileo-osnma/actions/workflows/test-vectors.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-[crates-badge]: https://img.shields.io/crates/v/galileo-osnma.svg
+[crates-badge]: https://buildstats.info/crate/galileo-osnma
 [crates-url]: https://crates.io/crates/galileo-osnma
+[docs-badge]: https://docs.rs/galileo-osnma/badge.svg
+[docs-url]: https://docs.rs/galileo-osnma
 
 galileo-osnma is a Rust implementation of the Galileo OSNMA (Open Service
 Navigation Message Authentication) protocol. This protocol is used by the
@@ -104,25 +110,24 @@ and the corresponding Public Key ID is `1`. The key in PEM format, as required b
 openssl x509 -in OSNMA_PublicKey_20240115100000_newPKID_1.crt -noout -pubkey > osnma-pubkey.pem
 ```
 
-The Merkle tree information is downloaded in an XML file. Only the tree root is
-needed. This corresponds to the following entry in the XML file:
-```xml
-<TreeNode><j>4</j><i>0</i><lengthInBits>256</lengthInBits><x_ji>...</x_ji></TreeNode>
+The Merkle tree information is downloaded in an XML file. The current file is
+`OSNMA_MerkleTree_20240115100000_newPKID_1.xml`. The tree root, 
+expressed as a 256-bit hexadecimal number can be extracted from the XML file
+with
 ```
-The tree root is given as a 256-bit hexadecimal number in place of the `...`. This
-256-bit hexadecimal format is the one that is directly used by the `galmon-osnma`
+./utils/extract_merkle_tree_root.py OSNMA_MerkleTree_20240115100000_newPKID_1.xml
+```
+This 256-bit hexadecimal format is the one that is directly used by the `galmon-osnma`
 `--merkle-root` argument. The tree root is also listed in other parts of the GSC Products
 website.
 
 The public key is also given as 264-bit compressed point in hexadecimal, both in
 an XML file containing the public key, and in the Merkle tree XML file, as well
-as in other parts of the GSC Products website. This format can be converted to
-PEM with the [ecdsa](https://pypi.org/project/ecdsa/) Python package as follows:
-```
-ECDSA_PUBKEY="..." python -c 'import ecdsa; import os; vk = ecdsa.VerifyingKey.from_string(bytes.fromhex(os.environ["ECDSA_PUBKEY"]), curve=ecdsa.NIST256p); print(str(vk.to_pem(), encoding="ascii"), end="")'
-```
-Here `...` should be replaced by the 264-bit hexadecimal representation of the
-public key.
+as in other parts of the GSC Products website. The scripts
+`extract_public_key.py` and `extract_merkle_tree_key.py` in the `utils`
+folder can be used to extract the key in hexadecimal from these XML
+files. The `sec1_to_pem.py` script in the `utils` folder can be used to
+convert this hexadecimal representation to PEM format.
 
 ## Development status
 
@@ -137,12 +142,13 @@ listed below.
 Supported features:
 
 * Verification of DSM-KROOT using ECDSA P-256.
-* Experimental support for verification of DSM-KROOT using ECDSA P-521.  This is
-  untested, because there are no test vectors or signal-in-space using ECDSA
-  P-521. Currently the `galmon-osnma` application assumes that the key that is
-  loaded is a P-256 key. The `p521` feature, which is enabled by default, is
-  used to enable P-521 support. It is disabled in the `osnma-longan-nano` demo,
-  since otherwise the firmware size is too large for the target microcontroller.
+* Verification of DSM-KROOT using ECDSA P-521, with some small caveats: There is
+  a `p521` feature used to enable or disable P-521 support. This feature is
+  enabled by default. It is disabled in the `osnma-longan-nano` demo, since
+  otherwise the firmware size is too large for the target microcontroller. The
+  `galmon-osnma` application can only load P-256 keys in PEM format. The
+  `--pubkey-p521` argument can be used to load a P-521 key in hexadecimal format
+  instead.
 * Verification of DSM-PKR against the Merkle tree root.
 * Verification of TESLA keys using the TESLA root key or another previously
   authenticated key in the chain.
@@ -158,7 +164,7 @@ Supported features:
 * Storage of the current TESLA key and potentially a TESLA key for the next
   chain, in order to support chain renewal or revocation scenarios seamlessly.
 * Storage and classification of MACK messages and navigation data.
-* Tag accumulation. 80 bit worth of tags are required to consider a piece
+* Tag accumulation. 40 bit worth of tags are required to consider a piece
   of navigation data as authenticated.
 * Non-nominal scenarios (renewals, revocations, alerts), according to the values
   of the NMA status and CPKS fields in the NMA header.
@@ -172,6 +178,37 @@ functionality and usability of galileo-osnma:
 
 * C API
 * Python API
+
+## OSNMA Test Vectors
+
+There is a script `run_test_vectors.sh` that is used to run the
+[OSNMA Test Vectors](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Annex_B_Test_Vectors.zip)
+provided as an annex to the
+[OSNMA Receiver Guidelines v1.2](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_Receiver_Guidelines_v1.2.pdf).
+The script uses the small application in the `osnma-test-vectors-to-galmon`
+folder to convert the CSV test vectors into the Galmon transport format, and
+pipes this data into the `galmon-osnma` application.
+
+When the script runs, it prints a description of what should happen in each
+test, but there are no automatic pass/fail criteria. The log outputs for each
+test need to be checked manually. The script is run as
+```
+./utils/run_test_vectors.sh Test_vectors
+```
+where `Test_vectors` is the path of the folder containing the test vectors.
+It is recommended to run it as follows to capture all the output into `less`
+using colours:
+```
+RUST_LOG_STYLE=always ./utils/run_test_vectors.sh Test_vectors 2>&1 | less -R
+```
+By default, the log level is set to display only errors and warnings, and info
+messages corresponding to successful authentication of new navigation data.
+The log level can be overridden with the `RUST_LOG` environment variable as usual.
+
+There is a [CI workflow](https://github.com/daniestevez/galileo-osnma/actions/workflows/test-vectors.yml)
+that downloads the test vectors from the GSC website and runs the
+`run_test_vectors.sh` script. The output of this workflow can serve as a demo of the
+capabilities of galileo-osnma.
 
 ## Minimum Supported Rust Version
 
