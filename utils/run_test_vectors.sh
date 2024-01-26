@@ -339,12 +339,9 @@ echo "Navigation data authentication should be successful, since there are also 
 echo "signed with the public key from the new Merkle tree."
 echo ""
 
-# The PublicKey files for Merkle_tree_3 are wrong (they don't match the public key in the
-# Merkle tree XML file, nor the pubkey used in the OSNMA test vectors).
-#
-# We load the pubkey from the Merkle tree instead
-
-$SEC1_TO_PEM $($GET_PUBKEY_FROM_MERKLE ${TEST_VECTOR_DIR}/cryptographic_material/Merkle_tree_3/MerkleTree/OSNMA_MerkleTree_20231007201500_PKID_1.xml) > $PUBKEY
+openssl x509 \
+        -in "${TEST_VECTOR_DIR}/cryptographic_material/Merkle_tree_3/PublicKey/OSNMA_PublicKey_20231007201500_PKID_1.crt" \
+        -noout -pubkey > $PUBKEY
 PKID=1
 MERKLE="$($GET_MERKLE ${TEST_VECTOR_DIR}/cryptographic_material/Merkle_tree_3/MerkleTree/OSNMA_MerkleTree_20231007201500_PKID_1.xml)"
 

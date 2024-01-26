@@ -19,7 +19,7 @@ jobs:
       run: pip install ecdsa
     - name: Download test vectors
       run: |
-        wget --quiet https://www.gsc-europa.eu/sites/default/files/sites/all/files/Annex_B_Test_Vectors.zip
-        unzip Annex_B_Test_Vectors.zip
+        wget --quiet https://www.gsc-europa.eu/sites/default/files/sites/all/files/Test_vectors.zip
+        unzip Test_vectors.zip
     - name: Run test vectors
       run: RUST_LOG_STYLE=always ./utils/run_test_vectors.sh Test_vectors

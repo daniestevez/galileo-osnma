@@ -42,7 +42,7 @@ The following reference documents from the Galileo system are relevant:
 
 * [Galileo OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 
-* [Galileo OSNMA Receiver Guidelines v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_Receiver_Guidelines_v1.1.pdf)
+* [Galileo OSNMA Receiver Guidelines v1.3](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_Receiver_Guidelines_v1.3.pdf)
 
 ## Quick start using Galmon
 
@@ -182,9 +182,9 @@ functionality and usability of galileo-osnma:
 ## OSNMA Test Vectors
 
 There is a script `run_test_vectors.sh` that is used to run the
-[OSNMA Test Vectors](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Annex_B_Test_Vectors.zip)
+[OSNMA Test Vectors](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Test_vectors.zip)
 provided as an annex to the
-[OSNMA Receiver Guidelines v1.2](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_Receiver_Guidelines_v1.2.pdf).
+[OSNMA Receiver Guidelines v1.3](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_Receiver_Guidelines_v1.3.pdf).
 The script uses the small application in the `osnma-test-vectors-to-galmon`
 folder to convert the CSV test vectors into the Galmon transport format, and
 pipes this data into the `galmon-osnma` application.
