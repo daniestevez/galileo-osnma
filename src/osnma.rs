@@ -93,7 +93,6 @@ struct OsnmaData<S: StaticStorage> {
     pubkey: PubkeyStore,
     key: KeyStore,
     only_slowmac: bool,
-    dont_use: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -137,7 +136,6 @@ impl<S: StaticStorage> Osnma<S> {
                         .map_or_else(PubkeyStore::empty, PubkeyStore::from_current_pubkey),
                     key: KeyStore::empty(),
                     only_slowmac,
-                    dont_use: false,
                 },
             },
         }
@@ -289,20 +287,15 @@ impl<S: StaticStorage> OsnmaData<S> {
 
     fn process_nma_header(&mut self, nma_header: NmaHeader<Validated>, pkid: u8) {
         match nma_header.nma_status() {
-            NmaStatus::Operational => {
-                self.dont_use = false;
-            }
+            NmaStatus::Operational => {}
             NmaStatus::Test => {
                 log::info!("NMA status is test");
-                self.dont_use = false;
             }
             NmaStatus::Reserved => {
                 log::error!("NMA status has a reserved value; assuming don't use");
-                self.set_dont_use();
             }
             NmaStatus::DontUse => {
                 log::warn!("NMA status is don't use");
-                self.set_dont_use();
                 match nma_header.chain_and_pubkey_status() {
                     ChainAndPubkeyStatus::ChainRevoked => {
                         // current chain is revoked
@@ -365,11 +358,6 @@ impl<S: StaticStorage> OsnmaData<S> {
         self.merkle_tree = None;
         self.pubkey = PubkeyStore::empty();
         self.key = KeyStore::empty();
-    }
-
-    fn set_dont_use(&mut self) {
-        self.dont_use = true;
-        self.navmessage.reset_authbits();
     }
 
     fn process_dsm_pkr(&mut self, dsm_pkr: DsmPkr) {
@@ -457,10 +445,6 @@ impl<S: StaticStorage> OsnmaData<S> {
     }
 
     fn process_tags(&mut self, current_key: &Key<Validated>) {
-        if self.dont_use {
-            return;
-        }
-
         let gst_mack = current_key.gst_subframe().add_seconds(-30);
         let gst_slowmac = gst_mack.add_seconds(-300);
         // Try to re-generate the key that was used for the MACSEQ of the

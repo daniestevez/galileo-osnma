@@ -578,10 +578,16 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 tag_idx,
                 prna
             );
-            for to_add in to_add_authbits {
-                if navdata.svn() == to_add.svn() && navdata.message_bits() == to_add.message_bits()
-                {
-                    to_add.add_authbits(tag);
+            // This nma_status is known good because it has been used in the tag
+            // validation, so we can act on it to decide if we can add
+            // authentication bits.
+            if matches!(nma_status, NmaStatus::Operational | NmaStatus::Test) {
+                for to_add in to_add_authbits {
+                    if navdata.svn() == to_add.svn()
+                        && navdata.message_bits() == to_add.message_bits()
+                    {
+                        to_add.add_authbits(tag);
+                    }
                 }
             }
         } else {
