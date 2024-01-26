@@ -15,7 +15,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install protobuf-compiler
-    - name: Install ecdsda with pip
+    - name: Install ecdsa with pip
       run: pip install ecdsa
     - name: Download test vectors
       run: |
