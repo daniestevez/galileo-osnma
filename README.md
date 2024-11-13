@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-[crates-badge]: https://buildstats.info/crate/galileo-osnma
+[crates-badge]: https://img.shields.io/crates/v/galileo-osnma.svg
 [crates-url]: https://crates.io/crates/galileo-osnma
 [docs-badge]: https://docs.rs/galileo-osnma/badge.svg
 [docs-url]: https://docs.rs/galileo-osnma
