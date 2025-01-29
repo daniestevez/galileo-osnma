@@ -88,7 +88,7 @@ pub enum DsmType {
     Pkr,
 }
 
-impl<'a> DsmHeader<'a> {
+impl DsmHeader<'_> {
     fn bits(&self) -> &BitSlice {
         BitSlice::from_slice(self.0)
     }
@@ -152,7 +152,7 @@ pub enum NewPublicKeyType {
     Reserved,
 }
 
-impl<'a> DsmPkr<'a> {
+impl DsmPkr<'_> {
     fn bits(&self) -> &BitSlice {
         BitSlice::from_slice(self.0)
     }
@@ -358,7 +358,7 @@ pub enum EcdsaFunction {
     P521Sha512,
 }
 
-impl<'a> DsmKroot<'a> {
+impl DsmKroot<'_> {
     fn bits(&self) -> &BitSlice {
         BitSlice::from_slice(self.0)
     }
@@ -693,7 +693,7 @@ pub struct Mack<'a, V> {
     _validated: V,
 }
 
-impl<'a> Mack<'a, NotValidated> {
+impl Mack<'_, NotValidated> {
     /// Constructs a new MACK message.
     ///
     /// The `data` should be a reference to an array containing the 60 bytes of
@@ -710,7 +710,7 @@ impl<'a> Mack<'a, NotValidated> {
     }
 }
 
-impl<'a, V> Mack<'a, V> {
+impl<V> Mack<'_, V> {
     /// Gives the key size in bits corresponding to the MACK message.
     ///
     /// This returns the value that has been given in [`Mack::new`].
@@ -819,7 +819,7 @@ impl std::error::Error for MackValidationError {
     }
 }
 
-impl<'a, V: Clone> Mack<'a, V> {
+impl<V: Clone> Mack<'_, V> {
     /// Gives an object representing one of the Tag-Info sections in the MACK message.
     ///
     /// The Tag-Info section is defined in Figure 11 of the
@@ -846,7 +846,9 @@ impl<'a, V: Clone> Mack<'a, V> {
             _validated: self._validated.clone(),
         }
     }
+}
 
+impl<'a, V: Clone> Mack<'a, V> {
     /// Try to validate the MACK message.
     ///
     /// Given the TESLA `key` transmitted on the next subframe, this will
@@ -868,7 +870,7 @@ impl<'a, V: Clone> Mack<'a, V> {
     /// indicating which check was not satisfied is returned.
     pub fn validate(
         &self,
-        key: &'_ Key<Validated>,
+        key: &Key<Validated>,
         prna: Svn,
         gst_mack: Gst,
     ) -> Result<Mack<'a, Validated>, MackValidationError> {
@@ -963,7 +965,7 @@ pub enum Adkd {
     Reserved,
 }
 
-impl<'a, V> TagAndInfo<'a, V> {
+impl<V> TagAndInfo<'_, V> {
     /// Gives the tag field.
     pub fn tag(&self) -> &BitSlice {
         &self.data[..self.data.len() - 16]
