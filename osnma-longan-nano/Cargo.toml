@@ -18,8 +18,8 @@ galileo-osnma = { path = "..", default-features = false }
 longan-nano = "0.3"
 nb = "1.0"
 p256 = { version = "0.13", features = ["ecdsa"], default-features = false }
-panic-halt = "0.2"
-riscv-rt = "0.12"
+panic-halt = "1"
+riscv-rt = "0.13"
 
 [build-dependencies]
 hex = "0.4"

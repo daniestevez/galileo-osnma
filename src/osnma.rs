@@ -623,7 +623,7 @@ impl PubkeyStore {
 
     fn revoke(&mut self, new_pkid: u8) {
         let matches = |k: &PublicKey<Validated>| k.public_key_id() < new_pkid;
-        if self.current.as_ref().map_or(false, matches) {
+        if self.current.as_ref().is_some_and(matches) {
             log::warn!(
                 "revoking pubkeys earlier than pkid {new_pkid}: \
                         revoking current pubkey {:?}",
@@ -631,7 +631,7 @@ impl PubkeyStore {
             );
             self.current = None;
         }
-        if self.next.as_ref().map_or(false, matches) {
+        if self.next.as_ref().is_some_and(matches) {
             log::warn!(
                 "revoking pubkeys earlier than pkid {new_pkid}: \
                         next pubkey {:?}",

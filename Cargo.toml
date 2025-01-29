@@ -1,6 +1,6 @@
 [package]
 name = "galileo-osnma"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 authors = ["Daniel Estevez <daniel@destevez.net>"]
 description = "Galileo OSNMA (Open Service Navigation Message Authentication)"
@@ -10,7 +10,7 @@ repository = "https://github.com/daniestevez/galileo-osnma/"
 keywords = ["galileo", "gnss", "osnma", "authentication", "cryptography"]
 categories = ["aerospace::space-protocols", "authentication", "embedded", "no-std"]
 exclude = ["/.github"]
-rust-version = "1.70.0"
+rust-version = "1.83.0"
 
 [package.metadata]
 
@@ -33,7 +33,7 @@ log = "0.4"
 # These two would bring std with default-features
 p256 = { version = "0.13", features = ["ecdsa"], default-features = false }
 p521 = { version = "0.13", features = ["ecdsa"], default-features = false, optional = true }
-prost = { version = "0.12", optional = true }
+prost = { version = "0.13", optional = true }
 # These two bring std with default-features
 sha2 = { version = "0.10", default-features = false }
 sha3 = { version = "0.10", default-features = false }
@@ -41,7 +41,7 @@ signature = "2.2"
 typenum = "1.15"
 
 [build-dependencies]
-prost-build = { version = "0.12", optional = true }
+prost-build = { version = "0.13", optional = true }
 
 [dev-dependencies]
 hex-literal = "0.4"
