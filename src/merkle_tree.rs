@@ -119,7 +119,7 @@ impl MerkleTree {
             }
             #[cfg(not(feature = "p521"))]
             NewPublicKeyType::EcdsaKey(EcdsaFunction::P521Sha512) => {
-                return Err(PkrError::P521NotSupported)
+                return Err(PkrError::P521NotSupported);
             }
             // if this function has been called, the PKR contains a public key
             _ => unreachable!(),

@@ -76,13 +76,13 @@ jobs:
         sudo apt-get update
         sudo apt-get install protobuf-compiler
     - name: Install toolchain
-      run: rustup install 1.83.0
+      run: rustup install 1.85.0
     - name: Doc
-      run: RUSTDOCFLAGS="-D warnings" cargo +1.83.0 doc --features galmon
+      run: RUSTDOCFLAGS="-D warnings" cargo +1.85.0 doc --features galmon
     - name: Build
-      run: cargo +1.83.0 build --verbose --features galmon
+      run: cargo +1.85.0 build --verbose --features galmon
     - name: Run tests
-      run: cargo +1.83.0 test --verbose --features galmon
+      run: cargo +1.85.0 test --verbose --features galmon
 
   galmon:
     name: Galmon

@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use galileo_osnma::{
+    Gst, InavBand, Osnma, PublicKey, Svn, Validated, Wn,
     galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport},
     storage::FullStorage,
     types::{BitSlice, NUM_SVNS},
-    Gst, InavBand, Osnma, PublicKey, Svn, Validated, Wn,
 };
 use spki::DecodePublicKey;
 use std::io::Read;
@@ -150,7 +150,7 @@ fn main() -> Result<()> {
                 1 => InavBand::E1B,
                 5 => InavBand::E5B,
                 _ => {
-                    log::error!("INAV word received on non-INAV band: sigid = {}", sigid);
+                    log::error!("INAV word received on non-INAV band: sigid = {sigid}");
                     continue;
                 }
             };
@@ -164,12 +164,7 @@ fn main() -> Result<()> {
             // bit is not present), so hopefully these pages don't make it here.
             let inav_word_type = inav_word[0] >> 2;
             if inav_word_type == 63 {
-                log::debug!(
-                    "discarding dummy INAV word from {} {:?} at {:?}",
-                    svn,
-                    band,
-                    gst
-                );
+                log::debug!("discarding dummy INAV word from {svn} {band:?} at {gst:?}");
                 continue;
             }
 
@@ -210,10 +205,10 @@ fn main() -> Result<()> {
                     {
                         log::info!(
                             "new timing parameters for {} authenticated (authbits = {}, GST = {:?})",
-			    svn,
+                            svn,
                             data.authbits(),
                             data.gst()
-			);
+                        );
                         timing_parameters[idx] = Some(data_bytes);
                     }
                 }

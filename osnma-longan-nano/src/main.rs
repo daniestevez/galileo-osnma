@@ -4,9 +4,9 @@
 use crate::pac::USART0;
 use core::fmt::Write;
 use galileo_osnma::{
+    Gst, InavBand, Osnma, PublicKey, Svn,
     storage::SmallStorage,
     types::{HKROOT_SECTION_BYTES, INAV_WORD_BYTES, MACK_SECTION_BYTES},
-    Gst, InavBand, Osnma, PublicKey, Svn,
 };
 use longan_nano::hal::{pac, prelude::*, serial};
 use nb::block;
@@ -102,12 +102,7 @@ impl OsnmaInterface {
         };
         let gst = Gst::new(wn, tow);
         let data = words.next().unwrap();
-        write!(
-            &mut self.board.tx,
-            "{} WN {} TOW {} E{}B ",
-            svn, wn, tow, band_num
-        )
-        .unwrap();
+        write!(&mut self.board.tx, "{svn} WN {wn} TOW {tow} E{band_num}B ").unwrap();
         const OSNMA_BYTES: usize = HKROOT_SECTION_BYTES + MACK_SECTION_BYTES;
         if data.len() == INAV_WORD_BYTES * 2 {
             let mut inav = [0; INAV_WORD_BYTES];

@@ -47,10 +47,10 @@
 //! When built with the default features, the crate does not require
 //! `std`. Additionally, the crate supports the following features:
 //! * `galmon`. This enables support for reading the Galmon transport protocol
-//!    and requires `std`.
+//!   and requires `std`.
 //! * `p521`. This enables support for ECDSA P-521 public keys. These public keys
-//!    defined in the OSNMA ICD, but currently only ECDSA P-256 keys are used in
-//!    the signal-in-space.
+//!   defined in the OSNMA ICD, but currently only ECDSA P-256 keys are used in
+//!   the signal-in-space.
 
 #![warn(missing_docs)]
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]

@@ -8,8 +8,8 @@
 //! parallel.
 
 use crate::types::{
-    HkrootMessage, HkrootSection, MackMessage, MackSection, OsnmaDataMessage, HKROOT_MESSAGE_BYTES,
-    HKROOT_SECTION_BYTES, MACK_MESSAGE_BYTES, MACK_SECTION_BYTES, NUM_SVNS,
+    HKROOT_MESSAGE_BYTES, HKROOT_SECTION_BYTES, HkrootMessage, HkrootSection, MACK_MESSAGE_BYTES,
+    MACK_SECTION_BYTES, MackMessage, MackSection, NUM_SVNS, OsnmaDataMessage,
 };
 use crate::{Gst, Svn, Tow, Wn};
 
@@ -66,17 +66,12 @@ impl CollectSubframe {
         let mack_section: MackSection = osnma_data[HKROOT_SECTION_BYTES..].try_into().unwrap();
         let word_num = (gst.tow() / 2) % Tow::from(WORDS_PER_SUBFRAME);
         log::trace!(
-            "feeding hkroot = {:02x?}, mack = {:02x?} for {} (GST = {:?}, word number = {})",
-            hkroot_section,
-            mack_section,
-            svn,
-            gst,
-            word_num
+            "feeding hkroot = {hkroot_section:02x?}, mack = {mack_section:02x?} for {svn} (GST = {gst:?}, word number = {word_num})"
         );
         let subframe = gst.tow() / SECONDS_PER_SUBFRAME;
         if gst.wn() != self.wn || subframe != self.subframe {
             log::debug!("valid sections per SVN: {:?}", &self.num_valid);
-            log::info!("starting collection of new subframe (GST {:?})", gst);
+            log::info!("starting collection of new subframe (GST {gst:?})");
             self.wn = gst.wn();
             self.subframe = subframe;
             for s in 0..NUM_SVNS {

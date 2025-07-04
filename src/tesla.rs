@@ -9,8 +9,8 @@
 use crate::bitfields::{
     self, ChainAndPubkeyStatus, DsmKroot, EcdsaFunction, Mack, NmaStatus, Prnd, TagAndInfo,
 };
-use crate::maclt::{get_flx_indices, get_maclt_entry, AuthObject, MacLTError, MacLTSlot};
-use crate::types::{BitSlice, VerifyingKey, NUM_SVNS};
+use crate::maclt::{AuthObject, MacLTError, MacLTSlot, get_flx_indices, get_maclt_entry};
+use crate::types::{BitSlice, NUM_SVNS, VerifyingKey};
 use crate::validation::{NotValidated, Validated};
 use crate::{Gst, PublicKey, Svn, Tow};
 use aes::Aes128;
@@ -20,8 +20,8 @@ use core::fmt;
 use crypto_common::generic_array::GenericArray;
 use hmac::{Hmac, Mac};
 use sha2::{
-    digest::{FixedOutput, Output, OutputSizeUser, Update},
     Digest, Sha256,
+    digest::{FixedOutput, Output, OutputSizeUser, Update},
 };
 use sha3::Sha3_256;
 
@@ -649,7 +649,7 @@ impl fmt::Display for KrootValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             KrootValidationError::WrongDsmKrootChain(e) => {
-                write!(f, "invalid chain in DSM-KROOT ({})", e)
+                write!(f, "invalid chain in DSM-KROOT ({e})")
             }
             KrootValidationError::WrongDsmKrootPadding => "incorrect padding in DSM-KROOT".fmt(f),
             KrootValidationError::WrongEcdsa => "invalid ECDSA signature in DSM-KROOT".fmt(f),
@@ -929,7 +929,7 @@ impl Key<Validated> {
         let mut buffer = Self::new_tag_buffer();
         Self::fill_buffer_header(&mut buffer, gst, prna, ctr, nma_status);
         Self::fill_buffer_navdata(&mut buffer, navdata);
-        let message_bytes = Self::TAG_FIXED_SIZE + (Self::STATUS_BITS + navdata.len() + 7) / 8;
+        let message_bytes = Self::TAG_FIXED_SIZE + (Self::STATUS_BITS + navdata.len()).div_ceil(8);
         mac.update(&buffer[..message_bytes]);
     }
 
@@ -943,7 +943,8 @@ impl Key<Validated> {
     ) {
         let mut buffer = Self::new_tag_buffer();
         Self::fill_buffer_header(&mut buffer, gst, prna, ctr, nma_status);
-        let message_bytes = Self::TAG_FIXED_SIZE + (Self::STATUS_BITS + navdata_len_bits + 7) / 8;
+        let message_bytes =
+            Self::TAG_FIXED_SIZE + (Self::STATUS_BITS + navdata_len_bits).div_ceil(8);
         mac.update(&buffer[..message_bytes]);
     }
 
@@ -1192,9 +1193,11 @@ mod test {
         let mack = test_mack();
         let prna = Svn::try_from(19).unwrap();
         for j in 1..mack.num_tags() {
-            assert!(test_chain()
-                .validate_adkd(j, mack.tag_and_info(j), prna, Gst::new(1176, 121050))
-                .is_ok());
+            assert!(
+                test_chain()
+                    .validate_adkd(j, mack.tag_and_info(j), prna, Gst::new(1176, 121050))
+                    .is_ok()
+            );
         }
     }
 
@@ -1204,9 +1207,11 @@ mod test {
         let mack = test_mack_2023();
         let prna = Svn::try_from(3).unwrap();
         for j in 1..mack.num_tags() {
-            assert!(test_chain()
-                .validate_adkd(j, mack.tag_and_info(j), prna, Gst::new(1268, 208890))
-                .is_ok());
+            assert!(
+                test_chain()
+                    .validate_adkd(j, mack.tag_and_info(j), prna, Gst::new(1268, 208890))
+                    .is_ok()
+            );
         }
     }
 
