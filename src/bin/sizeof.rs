@@ -1,6 +1,6 @@
 use galileo_osnma::{
-    storage::{FullStorage, SmallStorage},
     Osnma,
+    storage::{FullStorage, SmallStorage},
 };
 use std::mem::size_of;
 

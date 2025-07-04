@@ -281,7 +281,7 @@ impl<S: StaticStorage> OsnmaData<S> {
                 self.key.store_kroot(key, nma_header, gst);
                 self.process_nma_header(nma_header, pkid);
             }
-            Err(e) => log::error!("could not verify KROOT: {:?}", e),
+            Err(e) => log::error!("could not verify KROOT: {e:?}"),
         }
     }
 
@@ -365,7 +365,7 @@ impl<S: StaticStorage> OsnmaData<S> {
             NewPublicKeyType::EcdsaKey(_) => self.process_dsm_pkr_npk(dsm_pkr),
             NewPublicKeyType::OsnmaAlertMessage => self.process_dsm_pkr_alert_message(dsm_pkr),
             NewPublicKeyType::Reserved => {
-                log::error!("reserved NPKT in DSM-PKR: {:?}", dsm_pkr);
+                log::error!("reserved NPKT in DSM-PKR: {dsm_pkr:?}");
             }
         }
     }
@@ -416,9 +416,7 @@ impl<S: StaticStorage> OsnmaData<S> {
             Ordering::Greater => {
                 log::warn!(
                     "got a key in MACK which is older than our current valid key\
-                            MACK key = {:?}, current valid key = {:?}",
-                    new_key,
-                    current_key
+                            MACK key = {new_key:?}, current valid key = {current_key:?}"
                 );
             }
             Ordering::Less => {
@@ -426,18 +424,13 @@ impl<S: StaticStorage> OsnmaData<S> {
                 match current_key.validate_key(&new_key) {
                     Ok(new_valid_key) => {
                         log::info!(
-                            "new TESLA key {:?} successfully validated by {:?}",
-                            new_valid_key,
-                            current_key
+                            "new TESLA key {new_valid_key:?} successfully validated by {current_key:?}"
                         );
                         self.key.store_key(new_valid_key);
                         self.process_tags(&new_valid_key);
                     }
                     Err(e) => log::error!(
-                        "could not validate TESLA key {:?} using {:?}: {:?}",
-                        new_key,
-                        current_key,
-                        e
+                        "could not validate TESLA key {new_key:?} using {current_key:?}: {e:?}"
                     ),
                 }
             }
@@ -508,13 +501,7 @@ impl<S: StaticStorage> OsnmaData<S> {
     ) -> Option<Mack<'a, Validated>> {
         match mack.validate(key, prna, gst_mack) {
             Err(e) => {
-                log::error!(
-                    "error validating {} {:?} MACK {:?}: {:?}",
-                    prna,
-                    gst_mack,
-                    mack,
-                    e
-                );
+                log::error!("error validating {prna} {gst_mack:?} MACK {mack:?}: {e:?}");
                 None
             }
             Ok(m) => Some(m),
@@ -587,7 +574,9 @@ impl PubkeyStore {
         if let Some(current) = &self.current {
             let curr_pkid = current.public_key_id();
             if new_pkid < curr_pkid {
-                log::error!("received public key with id {new_pkid} smaller than current id {curr_pkid}; discarding");
+                log::error!(
+                    "received public key with id {new_pkid} smaller than current id {curr_pkid}; discarding"
+                );
                 return;
             }
             if new_pkid == curr_pkid {
@@ -684,13 +673,10 @@ impl KeyStore {
         // update chain in force
         self.chain_in_force = Some(ChainInForce {
             cid,
-            start_applicability: self.chain_in_force.as_ref().and_then(|cif| {
-                if cif.cid != cid {
-                    Some(gst)
-                } else {
-                    None
-                }
-            }),
+            start_applicability: self
+                .chain_in_force
+                .as_ref()
+                .and_then(|cif| if cif.cid != cid { Some(gst) } else { None }),
         });
     }
 
@@ -740,7 +726,7 @@ impl KeyStore {
         for k in &mut self.keys {
             if let Some(key) = k {
                 if key.chain().chain_id() == cid {
-                    log::warn!("revoking TESLA key {:?}", key);
+                    log::warn!("revoking TESLA key {key:?}");
                     *k = None;
                 }
             }

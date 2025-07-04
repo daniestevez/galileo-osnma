@@ -4,7 +4,7 @@
 //! the DSM blocks of a DSM message and recompose the message.
 
 use crate::bitfields::{DsmHeader, DsmType};
-use crate::types::{DsmBlock, DSM_BLOCK_BYTES};
+use crate::types::{DSM_BLOCK_BYTES, DsmBlock};
 
 const MAX_DSM_BLOCKS: usize = 16;
 const MAX_DSM_BYTES: usize = MAX_DSM_BLOCKS * DSM_BLOCK_BYTES;
@@ -81,7 +81,7 @@ impl CollectDsm {
     /// If the block fed corresponds to a new DSM ID, the old data is discarded
     /// and the collection for the new DSM begins.
     pub fn feed(&mut self, header: DsmHeader, block: &DsmBlock) -> Option<Dsm> {
-        log::trace!("feeding header = {:?}, block = {:02x?}", header, block);
+        log::trace!("feeding header = {header:?}, block = {block:02x?}");
         if header.dsm_id() != self.dsm_id || self.dsm_type.is_none() {
             log::info!(
                 "new DSM id = {} (had id = {}). resetting",
@@ -107,7 +107,7 @@ impl CollectDsm {
                 size
             );
             let dsm = &self.dsm[..size];
-            log::trace!("DSM contents {:02x?}", dsm);
+            log::trace!("DSM contents {dsm:02x?}");
             self.done = true;
             Some(Dsm {
                 id: self.dsm_id,
@@ -126,19 +126,16 @@ impl CollectDsm {
         if self.block_valid[block_id] {
             if section != block {
                 log::error!(
-                    "block {} already stored, but its contents differ\
-                             stored = {:02x?}, just received = {:02x?}",
-                    block_id,
-                    section,
-                    block
+                    "block {block_id} already stored, but its contents differ\
+                             stored = {section:02x?}, just received = {block:02x?}"
                 );
             } else {
-                log::trace!("block {} already stored", block_id);
+                log::trace!("block {block_id} already stored");
             }
         } else {
             section.copy_from_slice(block);
             self.block_valid[block_id] = true;
-            log::trace!("stored block {}", block_id);
+            log::trace!("stored block {block_id}");
         }
     }
 
@@ -151,7 +148,7 @@ impl CollectDsm {
         let nb = self.dsm[0] >> 4;
         if let Some(n) = Self::number_of_blocks(dsm_type, nb) {
             let missing = self.block_valid[..n].iter().filter(|&x| !x).count();
-            log::trace!("DSM size = {} blocks. missing {} blocks", n, missing);
+            log::trace!("DSM size = {n} blocks. missing {missing} blocks");
             if missing == 0 {
                 Some(n * DSM_BLOCK_BYTES)
             } else {
@@ -192,7 +189,7 @@ impl CollectDsm {
             }
         };
         if a.is_none() {
-            log::error!("reserved NB value {} for dsm_type = {:?}", nb, dsm_type);
+            log::error!("reserved NB value {nb} for dsm_type = {dsm_type:?}");
         }
         a
     }

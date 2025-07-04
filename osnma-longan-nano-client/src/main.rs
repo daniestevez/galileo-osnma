@@ -1,7 +1,7 @@
 use galileo_osnma::galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport};
 use galileo_osnma::{
-    types::{InavWord, OsnmaDataMessage},
     Gst, InavBand, Wn,
+    types::{InavWord, OsnmaDataMessage},
 };
 use std::error::Error;
 use std::io::{BufRead, BufReader};
@@ -25,7 +25,7 @@ impl Serial {
         loop {
             let mut line = String::new();
             self.reader.read_line(&mut line)?;
-            print!("{}", line);
+            print!("{line}");
             if line == "READY\r\n" {
                 return Ok(());
             }

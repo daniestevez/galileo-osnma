@@ -3,11 +3,11 @@
 //! This module contains [`MackStorage`], which is used to classify and store
 //! MACK messages until their corresponding TESLA keys are received.
 
+use crate::Svn;
 use crate::bitfields::NmaStatus;
 use crate::gst::Gst;
 use crate::storage::StaticStorage;
 use crate::types::MackMessage;
-use crate::Svn;
 use generic_array::GenericArray;
 use typenum::Unsigned;
 
@@ -61,7 +61,7 @@ impl<S: StaticStorage> MackStorage<S> {
         self.adjust_write_pointer(gst);
         for location in self.current_macks_as_mut().iter_mut() {
             if location.is_none() {
-                log::trace!("storing MACK {:02x?} for {} and GST {:?}", mack, svn, gst);
+                log::trace!("storing MACK {mack:02x?} for {svn} and GST {gst:?}");
                 *location = Some(Mack {
                     message: *mack,
                     svn,
@@ -70,12 +70,7 @@ impl<S: StaticStorage> MackStorage<S> {
                 return;
             }
         }
-        log::warn!(
-            "no room to store MACK {:02x?} for {} and GST {:?}",
-            mack,
-            svn,
-            gst
-        );
+        log::warn!("no room to store MACK {mack:02x?} for {svn} and GST {gst:?}");
     }
 
     fn current_macks_as_mut(&mut self) -> &mut [Option<Mack>] {
@@ -89,10 +84,8 @@ impl<S: StaticStorage> MackStorage<S> {
         if let Some(g) = self.gsts[self.write_pointer] {
             if g != gst {
                 log::trace!(
-                    "got a new GST {:?} (current GST is {:?}); \
-                             advancing write pointer",
-                    gst,
-                    g
+                    "got a new GST {gst:?} (current GST is {g:?}); \
+                             advancing write pointer"
                 );
                 self.write_pointer = (self.write_pointer + 1) % S::MackDepth::USIZE;
                 self.current_macks_as_mut().fill(None);
@@ -114,11 +107,11 @@ impl<S: StaticStorage> MackStorage<S> {
     /// The `gst` parameter refers to the GST at the start of the subframe when the
     /// MACK message was transmitted.
     pub fn get(&self, svn: Svn, gst: Gst) -> Option<(&MackMessage, NmaStatus)> {
-        let gst_idx =
-            self.gsts
-                .iter()
-                .enumerate()
-                .find_map(|(j, &g)| if g == Some(gst) { Some(j) } else { None })?;
+        let gst_idx = self
+            .gsts
+            .iter()
+            .enumerate()
+            .find_map(|(j, &g)| if g == Some(gst) { Some(j) } else { None })?;
         self.macks[gst_idx * S::NUM_SATS..(gst_idx + 1) * S::NUM_SATS]
             .iter()
             .find_map(|x| match x {

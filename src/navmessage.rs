@@ -87,12 +87,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
     ///
     /// The `band` parameter indicates the band in which the INAV word was received.
     pub fn feed(&mut self, word: &InavWord, svn: Svn, gst: Gst, band: InavBand) {
-        log::trace!(
-            "feeding INAV word = {:02x?} for {} GST {:?}",
-            word,
-            svn,
-            gst
-        );
+        log::trace!("feeding INAV word = {word:02x?} for {svn} GST {gst:?}");
         let gst = gst.gst_subframe();
         self.adjust_write_pointer(gst);
 
@@ -143,10 +138,8 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         if let Some(g) = self.gsts[self.write_pointer] {
             if g != gst {
                 log::trace!(
-                    "got a new GST {:?} (current GST is {:?}); \
-                     advancing write pointer",
-                    gst,
-                    g
+                    "got a new GST {gst:?} (current GST is {g:?}); \
+                     advancing write pointer"
                 );
                 let new_pointer = (self.write_pointer + 1) % S::NavMessageDepth::USIZE;
                 self.ced_and_status.copy_within(
@@ -160,7 +153,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 self.write_pointer = new_pointer;
                 self.increase_age();
                 if log::log_enabled!(log::Level::Debug) {
-                    log::debug!("advanced write pointer to {:?}", gst);
+                    log::debug!("advanced write pointer to {gst:?}");
                     log::debug!("CedAndStatus contents:");
                     for elem in self.ced_and_status
                         [self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS]
@@ -378,7 +371,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             let prnd = match u8::try_from(tag.prnd()) {
                 Ok(p) => p,
                 Err(_) => {
-                    log::error!("could not obtain PRND from tag {:?}", tag);
+                    log::error!("could not obtain PRND from tag {tag:?}");
                     continue;
                 }
             };
@@ -462,7 +455,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                     // have the appropriate extra delay
                 }
                 Adkd::Reserved => {
-                    log::error!("reserved ADKD in tag {:?}", tag);
+                    log::error!("reserved ADKD in tag {tag:?}");
                 }
             }
         }
@@ -501,7 +494,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             let prnd = match u8::try_from(tag.prnd()) {
                 Ok(p) => p,
                 Err(_) => {
-                    log::error!("could not obtain PRND from tag {:?}", tag);
+                    log::error!("could not obtain PRND from tag {tag:?}");
                     continue;
                 }
             };
@@ -570,14 +563,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
             ),
         };
         if ret {
-            log::info!(
-                "E{:02} {:?} at {:?} tag{} correct (auth by {})",
-                prnd,
-                adkd,
-                gst_tag,
-                tag_idx,
-                prna
-            );
+            log::info!("E{prnd:02} {adkd:?} at {gst_tag:?} tag{tag_idx} correct (auth by {prna})");
             // This nma_status is known good because it has been used in the tag
             // validation, so we can act on it to decide if we can add
             // authentication bits.
@@ -591,14 +577,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 }
             }
         } else {
-            log::error!(
-                "E{:02} {:?} at {:?} tag{} wrong (auth by {})",
-                prnd,
-                adkd,
-                gst_tag,
-                tag_idx,
-                prna
-            );
+            log::error!("E{prnd:02} {adkd:?} at {gst_tag:?} tag{tag_idx} wrong (auth by {prna})");
         }
         ret
     }
@@ -624,21 +603,11 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         };
         if ret {
             log::info!(
-                "E{:02} {:?} at {:?} dummy tag{} correct (auth by {})",
-                prnd,
-                adkd,
-                gst_tag,
-                tag_idx,
-                prna
+                "E{prnd:02} {adkd:?} at {gst_tag:?} dummy tag{tag_idx} correct (auth by {prna})"
             );
         } else {
             log::error!(
-                "E{:02} {:?} at {:?} dummy tag{} wrong (auth by {})",
-                prnd,
-                adkd,
-                gst_tag,
-                tag_idx,
-                prna
+                "E{prnd:02} {adkd:?} at {gst_tag:?} dummy tag{tag_idx} wrong (auth by {prna})"
             );
         }
         ret
@@ -666,7 +635,7 @@ impl<S: StaticStorage> Default for CollectNavMessage<S> {
 
 const CED_AND_STATUS_WORDS: usize = 5;
 const CED_AND_STATUS_BITS: usize = 549;
-const CED_AND_STATUS_BYTES: usize = (CED_AND_STATUS_BITS + 7) / 8;
+const CED_AND_STATUS_BYTES: usize = CED_AND_STATUS_BITS.div_ceil(8);
 
 #[doc(hidden)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -680,7 +649,7 @@ pub struct CedAndStatus {
 
 const TIMING_PARAMETERS_WORDS: usize = 2;
 const TIMING_PARAMETERS_BITS: usize = 141;
-const TIMING_PARAMETERS_BYTES: usize = (TIMING_PARAMETERS_BITS + 7) / 8;
+const TIMING_PARAMETERS_BYTES: usize = TIMING_PARAMETERS_BITS.div_ceil(8);
 
 #[doc(hidden)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]

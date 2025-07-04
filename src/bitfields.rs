@@ -7,7 +7,7 @@
 pub use crate::tesla::NmaHeader;
 use crate::tesla::{AdkdCheckError, Key, MacseqCheckError};
 use crate::types::{
-    BitSlice, MackMessage, MerkleTreeNode, Towh, MACK_MESSAGE_BYTES, MERKLE_TREE_NODE_BYTES,
+    BitSlice, MACK_MESSAGE_BYTES, MERKLE_TREE_NODE_BYTES, MackMessage, MerkleTreeNode, Towh,
 };
 use crate::validation::{NotValidated, Validated};
 use crate::{Gst, Svn, Wn};
@@ -521,9 +521,8 @@ impl DsmKroot<'_> {
             EcdsaFunction::P521Sha512
         } else {
             panic!(
-                "failed to guess ECDSA function with DSM-KROOT total len = {}\
-                    and kroot len = {}",
-                total_len, kroot_len
+                "failed to guess ECDSA function with DSM-KROOT total len = {total_len}\
+                    and kroot len = {kroot_len}"
             );
         }
     }
@@ -797,7 +796,7 @@ impl fmt::Display for MackValidationError {
         match self {
             MackValidationError::MacseqError(err) => err.fmt(f),
             MackValidationError::WrongAdkd { tag_index, error } => {
-                write!(f, "incorrect ADKD field at tag {} ({})", tag_index, error)
+                write!(f, "incorrect ADKD field at tag {tag_index} ({error})")
             }
         }
     }

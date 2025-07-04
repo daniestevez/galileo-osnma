@@ -36,10 +36,7 @@ fn read_merkle_tree_root(path: &str) -> std::io::Result<[u8; 32]> {
 fn merkle_tree_to_rust(merkle_tree_root: &[u8; 32], path: &Path) -> std::io::Result<()> {
     fs::write(
         path,
-        format!(
-            "const OSNMA_MERKLE_TREE_ROOT: [u8; 32] = {:?};\n",
-            merkle_tree_root,
-        ),
+        format!("const OSNMA_MERKLE_TREE_ROOT: [u8; 32] = {merkle_tree_root:?};\n",),
     )
 }
 

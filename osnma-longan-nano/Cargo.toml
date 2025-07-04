@@ -1,7 +1,7 @@
 [package]
 name = "osnma-longan-nano"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 authors = ["Daniel Estevez <daniel@destevez.net>"]
 description = "Galileo OSNMA demo in a Longan Nano board"
 license = "MIT OR Apache-2.0"
@@ -19,7 +19,7 @@ longan-nano = "0.3"
 nb = "1.0"
 p256 = { version = "0.13", features = ["ecdsa"], default-features = false }
 panic-halt = "1"
-riscv-rt = "0.13"
+riscv-rt = "0.15"
 
 [build-dependencies]
 hex = "0.4"

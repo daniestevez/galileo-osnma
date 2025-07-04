@@ -3,15 +3,15 @@ use bitvec::{field::BitField, vec::BitVec};
 use chrono::NaiveDateTime;
 use clap::Parser;
 use galileo_osnma::{
+    Gst,
     galmon::{
         navmon::{
-            nav_mon_message::{GalileoInav, Type},
             NavMonMessage,
+            nav_mon_message::{GalileoInav, Type},
         },
         transport::WriteTransport,
     },
     types::BitSlice,
-    Gst,
 };
 use std::{fs, path::PathBuf};
 
@@ -25,7 +25,7 @@ struct Args {
 
 fn filename_to_gst(filename: &str) -> Result<Gst> {
     let dt = NaiveDateTime::parse_from_str(filename, "%d_%b_%Y_GST_%H_%M_%S.csv")?;
-    let t = dt.timestamp();
+    let t = dt.and_utc().timestamp();
     let gst_epoch_t = 935280000; // 1999-08-22 00:00:00 GST
     let gst_seconds = t - gst_epoch_t;
     const SECS_IN_WEEK: i64 = 24 * 3600 * 7;
