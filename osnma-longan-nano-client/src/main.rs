@@ -109,11 +109,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             last_tow_mod_30 = tow % 30;
 
             let gst = Gst::new(wn, tow);
-            if let Some(current) = current_subframe {
-                if current > gst.gst_subframe() {
-                    // Avoid processing INAV words that are in a previous subframe
-                    continue;
-                }
+            if let Some(current) = current_subframe
+                && current > gst.gst_subframe()
+            {
+                // Avoid processing INAV words that are in a previous subframe
+                continue;
             }
             current_subframe = Some(gst.gst_subframe());
             let svn = usize::try_from(inav.gnss_sv).unwrap();

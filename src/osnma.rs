@@ -219,7 +219,7 @@ impl<S: StaticStorage> Osnma<S> {
     /// available in the OSNMA storage. If the storage does not contain any
     /// authenticated CED and health status data for this SVN, this returns
     /// `None`.
-    pub fn get_ced_and_status(&self, svn: Svn) -> Option<NavMessageData> {
+    pub fn get_ced_and_status(&self, svn: Svn) -> Option<NavMessageData<'_>> {
         self.data.data.navmessage.get_ced_and_status(svn)
     }
 
@@ -229,7 +229,7 @@ impl<S: StaticStorage> Osnma<S> {
     /// parameters data (ADKD=4) for the satellite with SVN `svn` that is
     /// available in the OSNMA storage. If the storage does not contain any
     /// authenticated timing parameters data for this SVN, this returns `None`.
-    pub fn get_timing_parameters(&self, svn: Svn) -> Option<NavMessageData> {
+    pub fn get_timing_parameters(&self, svn: Svn) -> Option<NavMessageData<'_>> {
         self.data.data.navmessage.get_timing_parameters(svn)
     }
 }

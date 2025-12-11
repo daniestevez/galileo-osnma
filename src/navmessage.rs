@@ -214,7 +214,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
     /// available in the OSNMA storage. If the storage does not contain any
     /// authenticated CED and health status data for this SVN, this returns
     /// `None`.
-    pub fn get_ced_and_status(&self, svn: Svn) -> Option<NavMessageData> {
+    pub fn get_ced_and_status(&self, svn: Svn) -> Option<NavMessageData<'_>> {
         // Search in order of decreasing Gst
         for j in 0..S::NavMessageDepth::USIZE {
             let gst_idx =
@@ -242,7 +242,7 @@ impl<S: StaticStorage> CollectNavMessage<S> {
     /// (ADKD=4) for the satellite with SNV`svn` that is available in the OSNMA
     /// storage. If the storage does not contain any authenticated timing
     /// parameters data for this SVN, this returns `None`.
-    pub fn get_timing_parameters(&self, svn: Svn) -> Option<NavMessageData> {
+    pub fn get_timing_parameters(&self, svn: Svn) -> Option<NavMessageData<'_>> {
         // Search in order of decreasing Gst
         for j in 0..S::NavMessageDepth::USIZE {
             let gst_idx =

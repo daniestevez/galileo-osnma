@@ -699,7 +699,7 @@ impl Mack<'_, NotValidated> {
     /// the MACK message. The `key_size` in bits and `tag_size` in bits should
     /// be taken from the parameters of the current TESLA chain. The MACK
     /// message is marked as [`NotValidated`].
-    pub fn new(data: &MackMessage, key_size: usize, tag_size: usize) -> Mack<NotValidated> {
+    pub fn new(data: &MackMessage, key_size: usize, tag_size: usize) -> Mack<'_, NotValidated> {
         Mack {
             data: BitSlice::from_slice(data),
             key_size,

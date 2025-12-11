@@ -19,7 +19,7 @@ longan-nano = "0.3"
 nb = "1.0"
 p256 = { version = "0.13", features = ["ecdsa"], default-features = false }
 panic-halt = "1"
-riscv-rt = "0.15"
+riscv-rt = "0.16"
 
 [build-dependencies]
 hex = "0.4"
