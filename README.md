@@ -96,26 +96,27 @@ signal-in-space for a public key renewal or revocation. If only the Merkle tree
 root is given, it will be necessary to wait until the current ECDSA public key
 is broadcast in the signal-in-space.
 
-The public key and the Merkle tree root can be
-downloaded from the [European GNSS Service Centre](https://www.gsc-europa.eu/),
-under [GSC Products > OSNMA_PUBLICKEY](https://www.gsc-europa.eu/gsc-products/OSNMA/PKI).
-It is necessary to register an account to obtain these files.
+The public key and the Merkle tree root can be downloaded from the [European
+GNSS Service Centre](https://www.gsc-europa.eu/), under [GSC Products >
+OSNMA_MERKLETREE](https://www.gsc-europa.eu/gsc-products/OSNMA/MT) and [GSC
+Products > OSNMA_PUBLICKEY](https://www.gsc-europa.eu/gsc-products/OSNMA/PKI)
+respectively. It is necessary to register an account to obtain these files.
 
 The public key is downloaded as an x509 certificate. The Public Key ID is included
 in the filename, and it is also listed elsewhere in the GSC Products website.
-The current certificate file is `OSNMA_PublicKey_20240115100000_newPKID_1.crt`,
-and the corresponding Public Key ID is `1`. The key in PEM format, as required by
+The current certificate file is `OSNMA_PublicKey_20251210100000_newPKID_2.crt`,
+and the corresponding Public Key ID is `2`. The key in PEM format, as required by
 `galmon-osnma` can be extracted with
 ```
-openssl x509 -in OSNMA_PublicKey_20240115100000_newPKID_1.crt -noout -pubkey > osnma-pubkey.pem
+openssl x509 -in OSNMA_PublicKey_20251210100000_newPKID_2.crt -noout -pubkey > osnma-pubkey.pem
 ```
 
 The Merkle tree information is downloaded in an XML file. The current file is
-`OSNMA_MerkleTree_20240115100000_newPKID_1.xml`. The tree root, 
+`OSNMA_MerkleTree_20251210100000_newPKID_2.xml`. The tree root,
 expressed as a 256-bit hexadecimal number can be extracted from the XML file
 with
 ```
-./utils/extract_merkle_tree_root.py OSNMA_MerkleTree_20240115100000_newPKID_1.xml
+./utils/extract_merkle_tree_root.py OSNMA_MerkleTree_20251210100000_newPKID_2.xml
 ```
 This 256-bit hexadecimal format is the one that is directly used by the `galmon-osnma`
 `--merkle-root` argument. The tree root is also listed in other parts of the GSC Products
