@@ -130,19 +130,19 @@ fn main() -> Result<()> {
             last_tow_mod_30 = tow % 30;
 
             let gst = Gst::new(wn, tow);
-            if let Some(current) = current_subframe {
-                if current > gst.gst_subframe() {
-                    // Avoid processing INAV words that are in a previous subframe
-                    log::warn!(
-                        "dropping INAV word from previous subframe (current subframe {:?}, \
+            if let Some(current) = current_subframe
+                && current > gst.gst_subframe()
+            {
+                // Avoid processing INAV words that are in a previous subframe
+                log::warn!(
+                    "dropping INAV word from previous subframe (current subframe {:?}, \
 			 this INAV word {:?} SVN {} band {})",
-                        current,
-                        gst,
-                        inav.gnss_sv,
-                        sigid
-                    );
-                    continue;
-                }
+                    current,
+                    gst,
+                    inav.gnss_sv,
+                    sigid
+                );
+                continue;
             }
             current_subframe = Some(gst.gst_subframe());
             let svn = Svn::try_from(inav.gnss_sv).unwrap();

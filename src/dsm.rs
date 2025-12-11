@@ -80,7 +80,7 @@ impl CollectDsm {
     ///
     /// If the block fed corresponds to a new DSM ID, the old data is discarded
     /// and the collection for the new DSM begins.
-    pub fn feed(&mut self, header: DsmHeader, block: &DsmBlock) -> Option<Dsm> {
+    pub fn feed(&mut self, header: DsmHeader, block: &DsmBlock) -> Option<Dsm<'_>> {
         log::trace!("feeding header = {header:?}, block = {block:02x?}");
         if header.dsm_id() != self.dsm_id || self.dsm_type.is_none() {
             log::info!(
