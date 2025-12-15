@@ -1,10 +1,11 @@
 [package]
 name = "galileo-osnma"
-version = "0.11.0"
+version = "0.11.1"
 edition = "2024"
 authors = ["Daniel Estevez <daniel@destevez.net>"]
 description = "Galileo OSNMA (Open Service Navigation Message Authentication)"
 license = "MIT OR Apache-2.0"
+readme = "../README.md"
 homepage = "https://github.com/daniestevez/galileo-osnma/"
 repository = "https://github.com/daniestevez/galileo-osnma/"
 keywords = ["galileo", "gnss", "osnma", "authentication", "cryptography"]
