@@ -14,49 +14,50 @@ embedded microcontrollers.
 
 ### Building
 
-The instructions to set up the Rust riscv32imac toolchain can be found in the
-documentation for the [longan-nano](https://github.com/riscv-rust/longan-nano)
-crate.
+Building the firmware requires the following:
+
+- Rust riscv32imac toolchain. This can be installed with `rustup target add
+  riscv32imac-unknown-none-elf`.
+
+- [just](https://github.com/casey/just)
+
+- [cargo-binutils](https://github.com/rust-embedded/cargo-binutils/)
 
 The OSNMA ECDSA P-256 public key and the Merkle tree root are embedded in the
 binary during the build process. The public key is taken from the `pubkey.pem`
 file found in the root folder of this crate, and its Public Key ID is taken from
 the `pubkey_id.txt` file. The Merkle tree root is taken from the
-`merkle_tree_root.txt` file. "Fake" files are provided so that osnma-longan-demo
-can be built without access to the real cryptographic material. A binary built with
-this fake cryptographic material will not work with the Galileo signal-in-space.
+`merkle_tree_root.txt` file. Mock versions of these files containing random data
+are provided so that osnma-longan-demo can be built without access to the real
+cryptographic material. A binary built with this mock cryptographic material
+will not work with the Galileo signal-in-space.
 
-The fake `pubkey.pem` needs to be replaced with the authentic key, using the
-same PEM file format. Instructions about how to obtain the authentic public key
-can be found in the [galileo-osnma
+The mock `pubkey.pem` needs to be replaced with the real key, using the same PEM
+file format. Instructions about how to obtain the authentic public key can be
+found in the [galileo-osnma
 README](https://github.com/daniestevez/galileo-osnma#quick-start-using-galmon).
 Likewise the Public Key ID in `pubkey_id.txt` needs to be replaced by the
 correct one, and the Merkle tree root needs to be written to the file
 `merkle_tree_root.txt`.
 
-Once these files contain the real cryptographic material, the firmware can be
-built using
+The firmware is built by running
+
 ```
-cargo build --release
+just osnma-longan-nano
 ```
-Note that it is mandatory to build using the `--release` profile, since a binary
-built without `--release` will not fit in the 128 KiB of flash, so `rust-lld` will
-give an error.
 
 ### Flashing
 
-After the binary is built, it can be flashed to the microcontroller using any of
-the methods described in the
-[longan-nano documentation](https://github.com/riscv-rust/longan-nano#longan-nano).
-The easiest method for flashing is using dfu-util. This can be done by running
+The firmware can be flashed by running
+
 ```
-objcopy -O binary target/riscv32imac-unknown-none-elf/release/osnma-longan-nano firmware.bin
-dfu-util -a 0 -s 0x08000000:leave -D firmware.bin
+just osnma-longan-nano-flash
 ```
-The `objcopy` command must belong to a riscv toolchain, and when `dfu-util` is run
-the microcontroller should be in DFU mode and connected by USB to the computer. DFU
-mode is entered by holding the BOOT0 button on the board while the board is powered
-on or resetted.
+
+This requires `dfu-util`. When this is run, the microcontroller should be in DFU
+mode and connected by USB to the computer. DFU mode is entered by holding the
+BOOT0 button on the board while the board boots (either from a powered off state
+or from a reset button press).
 
 ### Serial port connection
 
@@ -73,25 +74,24 @@ converter such as [this device](https://www.amazon.com/gp/product/B07D6LLX19) sh
 ### Running the serial port client
 
 The serial port client that runs on the host computer can be found in the
-[osnma-longan-nano-client](https://github.com/daniestevez/galileo-osnma/tree/main/osnma-longan-nano-client) crate.
+[galileo-osnma](https://github.com/daniestevez/galileo-osnma/tree/main/galileo-osnma) crate.
 
 The binary in this crate must be run by indicating the path to the computer
 serial port to use (for instance `/dev/ttyACM0` or `/dev/ttyUSB0`) and feeding to its
 standard input data using the Galmon transport protocol, in the same way as with the
-`galmon-osnma` crate (see
+`galmon-osnma` application (see
 [these instructions](https://github.com/daniestevez/galileo-osnma#quick-start-using-galmon)).
 
 The serial port client will send the INAV and OSNMA data to the board and print
 to the standard output all the lines received from the microcontroller through
 the UART. The UART communication is described below.
 
-So, in the same way that navigation data can be piped to this application running on a local computer ([instructions](https://github.com/daniestevez/galileo-osnma#quick-start-using-galmon)), a web stream or 'live' data from a GNSS receiver can be piped to the [Longan nano](https://longan.sipeed.com/en/) via the [serial port client](https://github.com/daniestevez/galileo-osnma/tree/main/osnma-longan-nano-client).
-
-Example: (run from galileo-osnma/osnma-longan-nano-client/target/release/ & use correct /dev/tty* if different from /dev/ttyUSB0)
+For example,
 ```
-nc 86.82.68.237 10000 | ./osnma-longan-nano-client /dev/ttyUSB0
+just osnma-longan-nano-live-feed /dev/ttyUSB0
 ```
-
+can be run to send data from the Galmon live feed to the serial port
+`/dev/ttyUSB0`.
 
 After starting the serial port client, the microcontroller should be reset or
 powered on to start running the demo.

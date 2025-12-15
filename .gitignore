@@ -1,6 +1,3 @@
 /target
-/galmon-osnma/target
-/Cargo.lock
 *~
-/osnma-longan-nano/target
-/osnma-longan-nano-client/target
+/osnma-longan-nano-firmware.bin

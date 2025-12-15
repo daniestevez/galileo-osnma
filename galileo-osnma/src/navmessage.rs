@@ -135,49 +135,49 @@ impl<S: StaticStorage> CollectNavMessage<S> {
         // current, we advance the write pointer and copy the old CED and status
         // and timing parameters to the new write pointer location. We increase
         // the stale counter of the copy.
-        if let Some(g) = self.gsts[self.write_pointer] {
-            if g != gst {
-                log::trace!(
-                    "got a new GST {gst:?} (current GST is {g:?}); \
+        if let Some(g) = self.gsts[self.write_pointer]
+            && g != gst
+        {
+            log::trace!(
+                "got a new GST {gst:?} (current GST is {g:?}); \
                      advancing write pointer"
-                );
-                let new_pointer = (self.write_pointer + 1) % S::NavMessageDepth::USIZE;
-                self.ced_and_status.copy_within(
-                    self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS,
-                    new_pointer * S::NUM_SATS,
-                );
-                self.timing_parameters.copy_within(
-                    self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS,
-                    new_pointer * S::NUM_SATS,
-                );
-                self.write_pointer = new_pointer;
-                self.increase_age();
-                if log::log_enabled!(log::Level::Debug) {
-                    log::debug!("advanced write pointer to {gst:?}");
-                    log::debug!("CedAndStatus contents:");
-                    for elem in self.ced_and_status
-                        [self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS]
-                        .iter()
-                    {
-                        log::debug!(
-                            "SVN {:?}: age {:?} authbits {}",
-                            elem.svn,
-                            elem.age,
-                            elem.authbits
-                        );
-                    }
-                    log::debug!("TimingParameters contents:");
-                    for elem in self.timing_parameters
-                        [self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS]
-                        .iter()
-                    {
-                        log::debug!(
-                            "SVN {:?}: age {:?} authbits {}",
-                            elem.svn,
-                            elem.age,
-                            elem.authbits
-                        );
-                    }
+            );
+            let new_pointer = (self.write_pointer + 1) % S::NavMessageDepth::USIZE;
+            self.ced_and_status.copy_within(
+                self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS,
+                new_pointer * S::NUM_SATS,
+            );
+            self.timing_parameters.copy_within(
+                self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS,
+                new_pointer * S::NUM_SATS,
+            );
+            self.write_pointer = new_pointer;
+            self.increase_age();
+            if log::log_enabled!(log::Level::Debug) {
+                log::debug!("advanced write pointer to {gst:?}");
+                log::debug!("CedAndStatus contents:");
+                for elem in self.ced_and_status
+                    [self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS]
+                    .iter()
+                {
+                    log::debug!(
+                        "SVN {:?}: age {:?} authbits {}",
+                        elem.svn,
+                        elem.age,
+                        elem.authbits
+                    );
+                }
+                log::debug!("TimingParameters contents:");
+                for elem in self.timing_parameters
+                    [self.write_pointer * S::NUM_SATS..(self.write_pointer + 1) * S::NUM_SATS]
+                    .iter()
+                {
+                    log::debug!(
+                        "SVN {:?}: age {:?} authbits {}",
+                        elem.svn,
+                        elem.age,
+                        elem.authbits
+                    );
                 }
             }
         }
@@ -338,22 +338,22 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                 nma_status,
                 CED_AND_STATUS_BITS,
             );
-        } else if let Some(&navdata) = self.find_ced_and_status(prna, gst_navmessage) {
-            if navdata.max_age().saturating_add(1) <= mack.cop() {
-                // Try to validate tag0
-                Self::validate_tag(
-                    key,
-                    mack.tag0(),
-                    Adkd::InavCed,
-                    gst_mack,
-                    u8::from(prna),
-                    prna,
-                    0,
-                    nma_status,
-                    &navdata,
-                    self.ced_and_status_iter_authbits_mut(),
-                );
-            }
+        } else if let Some(&navdata) = self.find_ced_and_status(prna, gst_navmessage)
+            && navdata.max_age().saturating_add(1) <= mack.cop()
+        {
+            // Try to validate tag0
+            Self::validate_tag(
+                key,
+                mack.tag0(),
+                Adkd::InavCed,
+                gst_mack,
+                u8::from(prna),
+                prna,
+                0,
+                nma_status,
+                &navdata,
+                self.ced_and_status_iter_authbits_mut(),
+            );
         }
 
         // Try to validate InavCed and InavTiming tags
@@ -392,21 +392,20 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                             );
                         } else if let Some(&navdata) =
                             self.find_ced_and_status(prnd_svn, gst_navmessage)
+                            && navdata.max_age().saturating_add(1) <= tag.cop()
                         {
-                            if navdata.max_age().saturating_add(1) <= tag.cop() {
-                                Self::validate_tag(
-                                    key,
-                                    tag.tag(),
-                                    tag.adkd(),
-                                    gst_mack,
-                                    prnd,
-                                    prna,
-                                    j,
-                                    nma_status,
-                                    &navdata,
-                                    self.ced_and_status_iter_authbits_mut(),
-                                );
-                            }
+                            Self::validate_tag(
+                                key,
+                                tag.tag(),
+                                tag.adkd(),
+                                gst_mack,
+                                prnd,
+                                prna,
+                                j,
+                                nma_status,
+                                &navdata,
+                                self.ced_and_status_iter_authbits_mut(),
+                            );
                         }
                     }
                     Err(_) => {
@@ -429,21 +428,20 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                             );
                         } else if let Some(&navdata) =
                             self.find_timing_parameters(prnd_svn, gst_navmessage)
+                            && navdata.max_age().saturating_add(1) <= tag.cop()
                         {
-                            if navdata.max_age().saturating_add(1) <= tag.cop() {
-                                Self::validate_tag(
-                                    key,
-                                    tag.tag(),
-                                    tag.adkd(),
-                                    gst_mack,
-                                    prnd,
-                                    prna,
-                                    j,
-                                    nma_status,
-                                    &navdata,
-                                    self.timing_parameters_iter_authbits_mut(),
-                                );
-                            }
+                            Self::validate_tag(
+                                key,
+                                tag.tag(),
+                                tag.adkd(),
+                                gst_mack,
+                                prnd,
+                                prna,
+                                j,
+                                nma_status,
+                                &navdata,
+                                self.timing_parameters_iter_authbits_mut(),
+                            );
                         }
                     }
                     Err(_) => {
@@ -517,21 +515,21 @@ impl<S: StaticStorage> CollectNavMessage<S> {
                     nma_status,
                     CED_AND_STATUS_BITS,
                 );
-            } else if let Some(&navdata) = self.find_ced_and_status(prnd_svn, gst_navmessage) {
-                if navdata.max_age().saturating_add(1) <= tag.cop() {
-                    Self::validate_tag(
-                        key,
-                        tag.tag(),
-                        tag.adkd(),
-                        gst_mack,
-                        prnd,
-                        prna,
-                        j,
-                        nma_status,
-                        &navdata,
-                        self.ced_and_status_iter_authbits_mut(),
-                    );
-                }
+            } else if let Some(&navdata) = self.find_ced_and_status(prnd_svn, gst_navmessage)
+                && navdata.max_age().saturating_add(1) <= tag.cop()
+            {
+                Self::validate_tag(
+                    key,
+                    tag.tag(),
+                    tag.adkd(),
+                    gst_mack,
+                    prnd,
+                    prna,
+                    j,
+                    nma_status,
+                    &navdata,
+                    self.ced_and_status_iter_authbits_mut(),
+                );
             }
         }
     }

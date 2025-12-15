@@ -1,50 +1,46 @@
-[package]
-name = "galileo-osnma"
-version = "0.10.1"
-edition = "2024"
-authors = ["Daniel Estevez <daniel@destevez.net>"]
-description = "Galileo OSNMA (Open Service Navigation Message Authentication)"
-license = "MIT OR Apache-2.0"
-homepage = "https://github.com/daniestevez/galileo-osnma/"
-repository = "https://github.com/daniestevez/galileo-osnma/"
-keywords = ["galileo", "gnss", "osnma", "authentication", "cryptography"]
-categories = ["aerospace::space-protocols", "authentication", "embedded", "no-std"]
-exclude = ["/.github"]
-rust-version = "1.85.0"
+[workspace]
+resolver = "3"
+members = ["galileo-osnma", "osnma-longan-nano"]
+default-members = ["galileo-osnma"]
 
-[package.metadata]
-
-[features]
-default = ["p521"]
-# Galmon protobuf transport format support
-galmon = ["bytes", "prost", "prost-build", "std"]
-std = []
-
-[dependencies]
+[workspace.dependencies]
 aes = "0.8"
+anyhow = "1"
 bitvec = { version = "1", default-features = false }
-bytes = { version = "1.1", optional = true }
+bytes = "1.1"
+clap = { version = "4.4", features = ["derive"] }
+chrono = "0.4"
 cmac = "0.7"
 crypto-common = "0.1"
 ecdsa = "0.16"
+env_logger = "0.11"
 generic-array = "1.0"
+hex = { version = "0.4", default-features = false }
+hex-literal = "1"
 hmac = "0.12"
 log = "0.4"
+longan-nano = "0.3"
+nb = "1"
 # These two would bring std with default-features
 p256 = { version = "0.13", features = ["ecdsa"], default-features = false }
-p521 = { version = "0.13", features = ["ecdsa"], default-features = false, optional = true }
-prost = { version = "0.14", optional = true }
+p521 = { version = "0.13", features = ["ecdsa"], default-features = false }
+panic-halt = "1"
+prost = "0.14"
+prost-build = "0.14"
+riscv-rt = "0.16"
 # These two bring std with default-features
 sha2 = { version = "0.10", default-features = false }
 sha3 = { version = "0.10", default-features = false }
+serialport = "4"
 signature = "2.2"
+spki = { version = "0.7", features = ["pem"] }
 typenum = "1.15"
 
-[build-dependencies]
-prost-build = { version = "0.14", optional = true }
+[profile.release]
+codegen-units = 1
+lto = true
+panic = "abort"
 
-[dev-dependencies]
-hex-literal = "1"
-
-[package.metadata.docs.rs]
-features = ["galmon"]
+[profile.embedded]
+inherits = "release"
+opt-level = "z"  # Optimize for size.

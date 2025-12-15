@@ -453,41 +453,41 @@ impl<S: StaticStorage> OsnmaData<S> {
             }
         });
         for svn in Svn::iter() {
-            if !self.only_slowmac {
-                if let Some((mack, nma_status)) = self.mack.get(svn, gst_mack) {
-                    let mack = Mack::new(
-                        mack,
-                        current_key.chain().key_size_bits(),
-                        current_key.chain().tag_size_bits(),
-                    );
-                    if let Some(mack) = Self::validate_mack(mack, current_key, svn, gst_mack) {
-                        self.navmessage
-                            .process_mack(mack, current_key, svn, gst_mack, nma_status);
-                    };
-                }
+            if !self.only_slowmac
+                && let Some((mack, nma_status)) = self.mack.get(svn, gst_mack)
+            {
+                let mack = Mack::new(
+                    mack,
+                    current_key.chain().key_size_bits(),
+                    current_key.chain().tag_size_bits(),
+                );
+                if let Some(mack) = Self::validate_mack(mack, current_key, svn, gst_mack) {
+                    self.navmessage
+                        .process_mack(mack, current_key, svn, gst_mack, nma_status);
+                };
             }
 
             // Try to validate Slow MAC
             // This needs fetching a tag which is 300 seconds older than for
             // the other ADKDs
-            if let Some(slowmac_key) = &slowmac_key {
-                if let Some((mack, nma_status)) = self.mack.get(svn, gst_slowmac) {
-                    let mack = Mack::new(
+            if let Some(slowmac_key) = &slowmac_key
+                && let Some((mack, nma_status)) = self.mack.get(svn, gst_slowmac)
+            {
+                let mack = Mack::new(
+                    mack,
+                    current_key.chain().key_size_bits(),
+                    current_key.chain().tag_size_bits(),
+                );
+                // Note that slowmac_key is used for validation of the MACK, while
+                // current_key is used for validation of the Slow MAC tags it contains.
+                if let Some(mack) = Self::validate_mack(mack, slowmac_key, svn, gst_slowmac) {
+                    self.navmessage.process_mack_slowmac(
                         mack,
-                        current_key.chain().key_size_bits(),
-                        current_key.chain().tag_size_bits(),
+                        current_key,
+                        svn,
+                        gst_slowmac,
+                        nma_status,
                     );
-                    // Note that slowmac_key is used for validation of the MACK, while
-                    // current_key is used for validation of the Slow MAC tags it contains.
-                    if let Some(mack) = Self::validate_mack(mack, slowmac_key, svn, gst_slowmac) {
-                        self.navmessage.process_mack_slowmac(
-                            mack,
-                            current_key,
-                            svn,
-                            gst_slowmac,
-                            nma_status,
-                        );
-                    }
                 }
             }
         }
@@ -724,11 +724,11 @@ impl KeyStore {
 
     fn revoke(&mut self, cid: u8) {
         for k in &mut self.keys {
-            if let Some(key) = k {
-                if key.chain().chain_id() == cid {
-                    log::warn!("revoking TESLA key {key:?}");
-                    *k = None;
-                }
+            if let Some(key) = k
+                && key.chain().chain_id() == cid
+            {
+                log::warn!("revoking TESLA key {key:?}");
+                *k = None;
             }
         }
     }

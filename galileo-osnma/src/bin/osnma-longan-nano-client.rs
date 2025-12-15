@@ -1,10 +1,19 @@
+use anyhow::{Context, Result};
+use clap::Parser;
 use galileo_osnma::galmon::{navmon::nav_mon_message::GalileoInav, transport::ReadTransport};
 use galileo_osnma::{
     Gst, InavBand, Wn,
     types::{InavWord, OsnmaDataMessage},
 };
-use std::error::Error;
 use std::io::{BufRead, BufReader};
+
+/// Read Galmon protobuf from stdin and send it to longan-nano by UART
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Serial port connecting to longan-nano.
+    serial: String,
+}
 
 struct Serial {
     writer: Box<dyn serialport::SerialPort>,
@@ -12,7 +21,7 @@ struct Serial {
 }
 
 impl Serial {
-    fn new(port: &str) -> Result<Serial, Box<dyn Error>> {
+    fn new(port: &str) -> Result<Serial> {
         let port = serialport::new(port, 115_200)
             .timeout(std::time::Duration::from_secs(3600))
             .open()?;
@@ -21,7 +30,7 @@ impl Serial {
         Ok(Serial { writer, reader })
     }
 
-    fn read_until_ready(&mut self) -> Result<(), Box<dyn Error>> {
+    fn read_until_ready(&mut self) -> Result<()> {
         loop {
             let mut line = String::new();
             self.reader.read_line(&mut line)?;
@@ -32,7 +41,7 @@ impl Serial {
         }
     }
 
-    fn send_common(&mut self, svn: usize, gst: Gst, band: InavBand) -> Result<(), Box<dyn Error>> {
+    fn send_common(&mut self, svn: usize, gst: Gst, band: InavBand) -> Result<()> {
         let band = match band {
             InavBand::E1B => "1",
             InavBand::E5B => "5",
@@ -48,13 +57,7 @@ impl Serial {
         Ok(())
     }
 
-    fn send_inav(
-        &mut self,
-        inav: &InavWord,
-        svn: usize,
-        gst: Gst,
-        band: InavBand,
-    ) -> Result<(), Box<dyn Error>> {
+    fn send_inav(&mut self, inav: &InavWord, svn: usize, gst: Gst, band: InavBand) -> Result<()> {
         self.send_common(svn, gst, band)?;
         write!(&mut self.writer, "{}\r\n", hex::encode(inav))?;
         Ok(())
@@ -66,17 +69,17 @@ impl Serial {
         svn: usize,
         gst: Gst,
         band: InavBand,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<()> {
         self.send_common(svn, gst, band)?;
         write!(&mut self.writer, "{}\r\n", hex::encode(osnma))?;
         Ok(())
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<_> = std::env::args().collect();
-    let port = &args[1];
-    let mut serial = Serial::new(port)?;
+fn main() -> Result<()> {
+    let args = Args::parse();
+    let mut serial = Serial::new(&args.serial)
+        .with_context(|| format!("Failed to open serial port '{}'", args.serial))?;
     let mut read_galmon = ReadTransport::new(std::io::stdin());
     let mut current_subframe = None;
     let mut last_tow_mod_30 = 0;

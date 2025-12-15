@@ -81,15 +81,15 @@ impl<S: StaticStorage> MackStorage<S> {
         // If write pointer points to a valid GST which is distinct
         // from the current, we advance the write pointer and erase
         // everything at the new write pointer location.
-        if let Some(g) = self.gsts[self.write_pointer] {
-            if g != gst {
-                log::trace!(
-                    "got a new GST {gst:?} (current GST is {g:?}); \
+        if let Some(g) = self.gsts[self.write_pointer]
+            && g != gst
+        {
+            log::trace!(
+                "got a new GST {gst:?} (current GST is {g:?}); \
                              advancing write pointer"
-                );
-                self.write_pointer = (self.write_pointer + 1) % S::MackDepth::USIZE;
-                self.current_macks_as_mut().fill(None);
-            }
+            );
+            self.write_pointer = (self.write_pointer + 1) % S::MackDepth::USIZE;
+            self.current_macks_as_mut().fill(None);
         }
         self.gsts[self.write_pointer] = Some(gst);
     }
