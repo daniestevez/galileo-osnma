@@ -1,0 +1,87 @@
+[package]
+name = "galileo-osnma"
+version = "0.11.0"
+edition = "2024"
+authors = ["Daniel Estevez <daniel@destevez.net>"]
+description = "Galileo OSNMA (Open Service Navigation Message Authentication)"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/daniestevez/galileo-osnma/"
+repository = "https://github.com/daniestevez/galileo-osnma/"
+keywords = ["galileo", "gnss", "osnma", "authentication", "cryptography"]
+categories = ["aerospace::space-protocols", "authentication", "embedded", "no-std"]
+exclude = ["/.github"]
+rust-version = "1.88.0"
+
+[[bin]]
+name = "galmon-filter-inav"
+required-features = ["galmon"]
+
+[[bin]]
+name = "galmon-osnma"
+required-features = ["galmon-osnma"]
+
+[[bin]]
+name = "osnma-longan-nano-client"
+required-features = ["osnma-longan-nano"]
+
+[[bin]]
+name = "osnma-test-vectors-to-galmon"
+required-features = ["galmon-osnma"]
+
+[features]
+default = ["galmon-osnma", "osnma-longan-nano"]
+# Galmon protobuf transport format support
+galmon = ["dep:bytes", "dep:prost", "dep:prost-build", "std"]
+# galmon-osnma and osnma-test-vectors-to-galmon CLI tools
+galmon-osnma = [
+  "galmon",
+  "p521",
+  "dep:anyhow",
+  "dep:clap",
+  "dep:chrono",
+  "dep:env_logger",
+  "dep:hex",
+  "dep:spki",
+  "bitvec/std",
+  "p256/pem",
+  "p256/std",
+]
+osnma-longan-nano = [
+  "galmon",
+  "dep:anyhow",
+  "dep:clap",
+  "dep:hex",
+  "dep:serialport",
+]
+std = []
+
+[dependencies]
+aes = { workspace = true }
+anyhow = { workspace = true, optional = true }
+bitvec = { workspace = true }
+bytes = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
+cmac = { workspace = true }
+crypto-common = { workspace = true }
+ecdsa = { workspace = true }
+env_logger = { workspace = true, optional = true }
+generic-array = { workspace = true }
+hex = { workspace = true, default-features = true, optional = true }
+hmac = { workspace = true }
+log = { workspace = true }
+p256 = { workspace = true }
+p521 = { workspace = true, optional = true }
+prost = { workspace = true, optional = true }
+sha2 = { workspace = true }
+sha3 = { workspace = true }
+serialport = { workspace = true, optional = true }
+signature = { workspace = true }
+spki = { workspace = true, optional = true }
+typenum = { workspace = true }
+
+[build-dependencies]
+prost-build = { workspace = true, optional = true }
+
+[dev-dependencies]
+hex-literal = { workspace = true }

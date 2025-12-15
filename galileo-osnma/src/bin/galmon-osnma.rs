@@ -45,7 +45,7 @@ fn load_pubkey_p521(hex: &str, pkid: u8) -> Result<PublicKey<Validated>> {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let args = Args::parse();
 
     if args.merkle_root.is_none() && args.pubkey.is_none() && args.pubkey_p521.is_none() {

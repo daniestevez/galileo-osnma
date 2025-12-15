@@ -140,7 +140,7 @@ impl Gst {
     /// assert_eq!(gst.is_subframe(), false);
     /// assert_eq!(subframe.is_subframe(), true);
     pub fn is_subframe(&self) -> bool {
-        self.tow % SECS_PER_SUBFRAME == 0
+        self.tow.is_multiple_of(SECS_PER_SUBFRAME)
     }
 
     /// Returns the difference in subframes between `other` and `self`.

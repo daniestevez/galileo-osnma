@@ -54,33 +54,33 @@ pub mod transport {
                 match e.kind() {
                     ErrorKind::UnexpectedEof => return Ok(None),
                     _ => {
-                        log::error!("could not read packet header: {}", e);
+                        log::error!("could not read packet header: {e}");
                         return Err(e);
                     }
                 }
             }
             if &self.buffer[..4] != b"bert" {
                 let err = "incorrect galmon magic value";
-                log::error!("{}", err);
+                log::error!("{err}");
                 return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, err));
             }
             let size = usize::from(u16::from_be_bytes(self.buffer[4..6].try_into().unwrap()));
             if size > self.buffer.len() {
-                log::debug!("resize buffer to {}", size);
+                log::debug!("resize buffer to {size}");
                 self.buffer.resize(size, 0);
             }
             // Read protobuf frame
             if let Err(e) = self.read.read_exact(&mut self.buffer[..size]) {
-                log::error!("could not read protobuf frame: {}", e);
+                log::error!("could not read protobuf frame: {e}");
                 return Err(e);
             }
             let frame = match NavMonMessage::decode(&self.buffer[..size]) {
                 Ok(f) => {
-                    log::trace!("decoded protobuf frame: {:?}", f);
+                    log::trace!("decoded protobuf frame: {f:?}");
                     f
                 }
                 Err(e) => {
-                    log::error!("could not decode protobuf frame: {}", e);
+                    log::error!("could not decode protobuf frame: {e}");
                     return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e));
                 }
             };
@@ -116,7 +116,7 @@ pub mod transport {
             let total_size = size + 6;
             let cap = self.buffer.capacity();
             if total_size > cap {
-                log::debug!("resize buffer to {}", total_size);
+                log::debug!("resize buffer to {total_size}");
                 self.buffer.reserve(total_size - cap);
             }
             self.buffer.clear();
@@ -124,16 +124,16 @@ pub mod transport {
             let size_u16 = u16::try_from(size).unwrap();
             self.buffer.extend_from_slice(&size_u16.to_be_bytes());
             match packet.encode(&mut self.buffer) {
-                Ok(()) => log::trace!("encoded protobuf frame: {:?}", packet),
+                Ok(()) => log::trace!("encoded protobuf frame: {packet:?}"),
                 Err(e) => {
-                    log::error!("could not encoded protobuf frame: {}", e);
+                    log::error!("could not encoded protobuf frame: {e}");
                     return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e));
                 }
             };
             match self.write.write_all(&self.buffer) {
                 Ok(()) => Ok(self.buffer.len()),
                 Err(e) => {
-                    log::error!("could not write: {}", e);
+                    log::error!("could not write: {e}");
                     Err(e)
                 }
             }

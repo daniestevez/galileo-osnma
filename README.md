@@ -46,21 +46,25 @@ The following reference documents from the Galileo system are relevant:
 
 ## Quick start using Galmon
 
-galileo-osnma comes with a binary application that can read Galileo INAV pages
-using the [Galmon](https://github.com/berthubert/galmon) [transport
-protocol](https://github.com/berthubert/galmon#internals). This is located in
-the `galmon-osnma` folder.
+galileo-osnma comes with a binary application called `galmon-osnma` that can
+read Galileo INAV pages using the [Galmon](https://github.com/berthubert/galmon)
+[transport protocol](https://github.com/berthubert/galmon#internals).
 
 A quick way to see this working is to use the Galmon Galileo navigation data
-feed, which streams from 86.82.68.237, TCP port 10000. From the `galmon-osnma`
-folder, we can run
+feed, which streams from 86.82.68.237, TCP port 10000. From the root of this
+repository, run
 ```
-nc 86.82.68.237 10000 | \
-    RUST_LOG=info cargo run --release -- --pubkey osnma-pubkey.pem --pkid N
+just galmon-osnma-live-feed --pubkey osnma-pubkey.pem --pkid N
 ```
-to see galileo-osnma processing the OSNMA and navigation data streamed by Galmon.
-The [env_logger](https://docs.rs/env_logger/latest/env_logger/) documentation describes
-how the logging information produced by this application can be configured.
+to see galileo-osnma processing the OSNMA and navigation data streamed by Galmon
+(this and other common tasks need the [just](https://github.com/casey/just)
+command runner).
+
+This application uses
+[env_logger](https://docs.rs/env_logger/latest/env_logger/) to control
+logging. The `env_logger` documentation describes how the logging information
+can be configured through the `RUST_LOG` environment variable. By default, the
+info log level is enabled.
 
 The file `osnma-pubkey.pem` should contain the Galileo OSNMA public key, and the
 number `N` should be its associated Public Key ID (PKID). See the section below
@@ -74,8 +78,7 @@ some small problems with data or timestamps inconsistencies.
 Alternatively, you can use one of the tools of Galmon with your own GNSS
 receiver. For instance, an uBlox receiver can be used as
 ```
-ubxtool --wait --port /dev/ttyACM0 --station 1 --stdout --galileo \
-    | RUST_LOG=info cargo run --release -- --pubkey osnma-pubkey.pem --pkid N
+just galmon-osnma-ubxtool /dev/ttyACM0 --pubkey osnma-pubkey.pem --pkid N
 ```
 
 ## Obtaining the Galileo OSNMA public key and Merkle tree root
@@ -98,8 +101,8 @@ is broadcast in the signal-in-space.
 
 The public key and the Merkle tree root can be downloaded from the [European
 GNSS Service Centre](https://www.gsc-europa.eu/), under [GSC Products >
-OSNMA_MERKLETREE](https://www.gsc-europa.eu/gsc-products/OSNMA/MT) and [GSC
-Products > OSNMA_PUBLICKEY](https://www.gsc-europa.eu/gsc-products/OSNMA/PKI)
+OSNMA_PUBLICKEY](https://www.gsc-europa.eu/gsc-products/OSNMA/PKI) and [GSC
+Products > OSNMA_MERKLETREE](https://www.gsc-europa.eu/gsc-products/OSNMA/MT)
 respectively. It is necessary to register an account to obtain these files.
 
 The public key is downloaded as an x509 certificate. The Public Key ID is included
@@ -194,26 +197,19 @@ When the script runs, it prints a description of what should happen in each
 test, but there are no automatic pass/fail criteria. The log outputs for each
 test need to be checked manually. The script is run as
 ```
-./utils/run_test_vectors.sh Test_vectors
+just test-vectors
 ```
-where `Test_vectors` is the path of the folder containing the test vectors.
-It is recommended to run it as follows to capture all the output into `less`
-using colours:
-```
-RUST_LOG_STYLE=always ./utils/run_test_vectors.sh Test_vectors 2>&1 | less -R
-```
-By default, the log level is set to display only errors and warnings, and info
-messages corresponding to successful authentication of new navigation data.
-The log level can be overridden with the `RUST_LOG` environment variable as usual.
+This downloads the test vectors and runs the test script. By default, the log
+level is set to display only errors and warnings, and info messages
+corresponding to successful authentication of new navigation data.  The log
+level can be overridden with the `RUST_LOG` environment variable as usual.
 
-There is a [CI workflow](https://github.com/daniestevez/galileo-osnma/actions/workflows/test-vectors.yml)
-that downloads the test vectors from the GSC website and runs the
-`run_test_vectors.sh` script. The output of this workflow can serve as a demo of the
-capabilities of galileo-osnma.
+The test vectors test is also run as a CI job. The output of this job serves as
+a demo of the capabilities of galileo-osnma.
 
 ## Minimum Supported Rust Version
 
-Rust **1.83** or higher.
+Rust **1.88** or higher.
 
 Minimum supported Rust version can be changed in the future, but it will be done
 with a minor version bump.

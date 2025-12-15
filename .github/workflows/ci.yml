@@ -1,0 +1,87 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_LOG_STYLE: always
+  RUSTDOCFLAGS: "-D warnings"
+  JUST_COLOR: always
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        galmon: ["galmon", ""]
+        galmon-osnma: ["galmon-osnma", ""]
+        osnma-longan-nano: ["osnma-longan-nano", ""]
+        p521: ["p521", ""]
+        std: ["std", ""]
+        toolchain: ["stable", "1.88.0"]
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install toolchain
+      run: |
+        rustup install ${{ matrix.toolchain }}
+        rustup component add --toolchain ${{ matrix.toolchain }} rustfmt
+        rustup component add --toolchain ${{ matrix.toolchain }} clippy
+        rustup component add --toolchain ${{ matrix.toolchain }} llvm-tools
+        rustup target add --toolchain ${{ matrix.toolchain }} riscv32imac-unknown-none-elf
+    - uses: cargo-bins/cargo-binstall@main
+    - name: Install cargo-binutils
+      run: cargo binstall cargo-binutils
+    - uses: extractions/setup-just@v3
+    - name: Install protoc
+      if: ${{ matrix.galmon != '' || matrix.galmon-osnma != '' || matrix.osnma-longan-nano != '' }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
+    - name: Install libudev-dev
+      if: ${{ matrix.osnma-longan-nano != '' }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install libudev-dev
+    - name: Set environment
+      run: |
+        echo "RUSTUP_TOOLCHAIN=${{ matrix.toolchain }}" >> "$GITHUB_ENV"
+        echo "CARGO_FEATURES=${{matrix.galmon}},${{matrix.galmon-osnma}},${{matrix.osnma-longan-nano}},${{matrix.p521}},${{matrix.std}}" >> "$GITHUB_ENV"
+    - name: Format
+      run: cargo fmt --all -- --check
+    - name: Clippy
+      run: cargo clippy --all-targets --no-default-features --features $CARGO_FEATURES -- -D warnings
+    - name: Doc
+      run: cargo doc --no-default-features --features $CARGO_FEATURES
+    - name: Build
+      run: cargo build --verbose --no-default-features --features $CARGO_FEATURES
+    - name: Run tests
+      run: cargo test --verbose --no-default-features --features $CARGO_FEATURES
+    - name: Run clippy for osnma-longan-nano firmware
+      run: just clippy-osnma-longan-nano
+    - name: Build osnma-longan-nano firmware
+      run: just osnma-longan-nano
+  test-vectors:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install protoc and libudev-dev
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler libudev-dev
+    - name: Install ecdsa with pip
+      run: pip install ecdsa
+    - uses: extractions/setup-just@v3
+    - name: Run test vectors
+      run: just test-vectors
+  pycodestyle:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: Install pycodestyle with pip
+      run: pip install pycodestyle
+    - name: Run pycodestyle
+      run: pycodestyle .

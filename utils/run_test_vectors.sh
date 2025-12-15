@@ -14,15 +14,12 @@ GALILEO_OSNMA_DIR="$(dirname "$0")/../"
 
 echo "Building software"
 
-cd $GALILEO_OSNMA_DIR/osnma-test-vectors-to-galmon
-cargo build --release
-cd $ORIG_CWD
-cd $GALILEO_OSNMA_DIR/galmon-osnma
+cd $GALILEO_OSNMA_DIR
 cargo build --release
 cd $ORIG_CWD
 
-CONVERT=$GALILEO_OSNMA_DIR/osnma-test-vectors-to-galmon/target/release/osnma-test-vectors-to-galmon
-GALMON_OSNMA=$GALILEO_OSNMA_DIR/galmon-osnma/target/release/galmon-osnma
+CONVERT=$GALILEO_OSNMA_DIR/target/release/osnma-test-vectors-to-galmon
+GALMON_OSNMA=$GALILEO_OSNMA_DIR/target/release/galmon-osnma
 GET_MERKLE=$GALILEO_OSNMA_DIR/utils/extract_merkle_tree_root.py
 GET_PUBKEY=$GALILEO_OSNMA_DIR/utils/extract_public_key.py
 GET_PUBKEY_FROM_MERKLE=$GALILEO_OSNMA_DIR/utils/extract_merkle_tree_key.py
