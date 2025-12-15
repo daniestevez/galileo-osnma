@@ -1,6 +1,6 @@
 [package]
 name = "osnma-longan-nano"
-version = "0.11.0"
+version = "0.11.1"
 edition = "2024"
 authors = ["Daniel Estevez <daniel@destevez.net>"]
 description = "Galileo OSNMA demo in a Longan Nano board"

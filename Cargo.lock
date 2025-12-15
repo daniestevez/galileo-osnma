@@ -501,7 +501,7 @@ checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
 name = "galileo-osnma"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "aes",
  "anyhow",
@@ -882,7 +882,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "osnma-longan-nano"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "ecdsa",
  "galileo-osnma",

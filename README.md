@@ -2,8 +2,7 @@
 
 [![Crates.io][crates-badge]][crates-url]
 [![Docs][docs-badge]][docs-url]
-[![Rust](https://github.com/daniestevez/galileo-osnma/actions/workflows/rust.yml/badge.svg)](https://github.com/daniestevez/galileo-osnma/actions/workflows/rust.yml)
-[![OSNMA Test Vectors](https://github.com/daniestevez/galileo-osnma/actions/workflows/test-vectors.yml/badge.svg)](https://github.com/daniestevez/galileo-osnma/actions/workflows/test-vectors.yml)
+[![CI](https://github.com/daniestevez/galileo-osnma/actions/workflows/ci.yml/badge.svg)](https://github.com/daniestevez/galileo-osnma/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
