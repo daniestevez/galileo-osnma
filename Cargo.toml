@@ -43,4 +43,7 @@ panic = "abort"
 
 [profile.embedded]
 inherits = "release"
+# For some reason, the osnma-longan-nano firmware hangs when running
+# feed_osnma() if built with codegen-units = 1
+codegen-units = 2
 opt-level = "z"  # Optimize for size.
