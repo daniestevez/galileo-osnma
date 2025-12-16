@@ -37,7 +37,7 @@ The documentation for galileo-osnma is hosted in
 
 The following reference documents from the Galileo system are relevant:
 
-* [Galileo OS SIS ICD v2.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OS_SIS_ICD_v2.1.pdf)
+* [Galileo OS SIS ICD v2.2](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OS_SIS_ICD_v2.2.pdf)
 
 * [Galileo OSNMA SIS ICD v1.1](https://www.gsc-europa.eu/sites/default/files/sites/all/files/Galileo_OSNMA_SIS_ICD_v1.1.pdf).
 
