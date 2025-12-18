@@ -43,3 +43,12 @@ clippy-osnma-longan-nano:
 # flash osnma-longan-nano firmware
 osnma-longan-nano-flash: osnma-longan-nano
     dfu-util -a 0 -s 0x08000000:leave -D osnma-longan-nano-firmware.bin
+
+# run openocd
+openocd adapter-config:
+    openocd -f {{adapter-config}} -f osnma-longan-nano/openocd.cfg
+
+# run gdb with openocd:
+openocd-gdb:
+    riscv32-elf-gdb -x osnma-longan-nano/openocd.gdb \
+        target/riscv32imac-unknown-none-elf/embedded/osnma-longan-nano
