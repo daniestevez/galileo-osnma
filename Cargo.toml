@@ -43,9 +43,6 @@ panic = "abort"
 
 [profile.embedded]
 inherits = "release"
-# For some reason, the osnma-longan-nano firmware hangs when running
-# feed_osnma() if built with codegen-units = 1
-codegen-units = 16
 # Include debug info in the ELF to enhance gdb usage over JTAG
 debug = true
 opt-level = "z"  # Optimize for size.
