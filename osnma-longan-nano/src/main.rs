@@ -160,11 +160,21 @@ impl OsnmaInterface {
     }
 }
 
+// This function is marked as inline(never) to prevent it from being inlined
+// into the main() function. OsnmaInterface::new, which gets inlined into this
+// function, requires a particularly large stack, specially with codegen-units =
+// 1, in part because of some missing chances for RVO. Having this function
+// inlined into main() reduces significantly the stack space available for the
+// rest of the execution, which can be catastrophic if the program runs out of
+// stack space.
+#[inline(never)]
+fn new_interface() -> OsnmaInterface {
+    OsnmaInterface::new(Board::take())
+}
+
 #[entry]
 fn main() -> ! {
-    let board = Board::take();
-    let mut interface = OsnmaInterface::new(board);
-
+    let mut interface = new_interface();
     loop {
         interface.spin();
     }
