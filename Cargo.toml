@@ -27,7 +27,7 @@ p521 = { version = "0.13", features = ["ecdsa"], default-features = false }
 panic-halt = "1"
 prost = "0.14"
 prost-build = "0.14"
-riscv-rt = "0.16"
+riscv-rt = "0.17"
 # These two bring std with default-features
 sha2 = { version = "0.10", default-features = false }
 sha3 = { version = "0.10", default-features = false }
